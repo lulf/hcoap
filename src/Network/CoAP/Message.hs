@@ -51,6 +51,7 @@ data Header = Header
 type Version = Int
 type Id = Word16
 type Token = Int
+type OptionValue = ByteString
 
 data Option = ContentFormat
             | ETag
@@ -71,7 +72,7 @@ data Option = ContentFormat
 data Message = Message
   { messageHeader :: Header
   , messageToken  :: Maybe Token
-  , messageOptions :: Maybe [Option]
+  , messageOptions :: Maybe [(Option, OptionValue)]
   , messagePayload :: Maybe ByteString
   }
 
