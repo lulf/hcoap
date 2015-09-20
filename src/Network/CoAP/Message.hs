@@ -2,13 +2,15 @@ module Network.CoAP.Message
 ( Header
 , Message
 , Type
-, parseMessage
-, encodeMessage
+, decode
+, decodeMessage
+, encode
 ) where
 
-import Data.ByteString
+import Data.ByteString.Lazy
 import Data.Word
-import Data.Binary
+import Data.Binary hiding (encode, decode)
+import Data.Binary.Get
 import Data.Bits
 
 data Type = CON | NON | ACK | RST
@@ -76,8 +78,13 @@ data Message = Message
   , messagePayload :: Maybe ByteString
   }
 
-parseMessage :: ByteString -> Maybe Message
-parseMessage _ = Nothing
+decodeMessage :: Get (Maybe Message)
+decodeMessage = do
+  return $ Nothing
 
-encodeMessage :: Message -> ByteString
-encodeMessage _ = empty
+
+decode :: ByteString -> Maybe Message
+decode msg = runGet decodeMessage msg
+
+encode :: Message -> ByteString
+encode _ = empty
