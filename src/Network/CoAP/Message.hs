@@ -78,13 +78,22 @@ data Message = Message
   , messagePayload :: Maybe ByteString
   }
 
-decodeMessage :: Get (Maybe Message)
+decodeMessage :: Get (Message)
 decodeMessage = do
-  return $ Nothing
+  a <- getWord8
+  let header = Header 1 ACK Empty (fromIntegral 1)
+  return (Message
+         { messageHeader  = header
+         , messageToken   = Nothing
+         , messageOptions = Nothing
+         , messagePayload = Nothing })
+
 
 
 decode :: ByteString -> Maybe Message
-decode msg = runGet decodeMessage msg
+decode msg =
+  let parsedMsg = runGet decodeMessage msg
+   in Nothing
 
 encode :: Message -> ByteString
 encode _ = empty
