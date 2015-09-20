@@ -50,9 +50,9 @@ data Header = Header
   , messageId          :: Id
   }
 
-type Version = Int
-type Id = Word16
-type Token = Int
+type Version     = Int
+type Id          = Word16
+type Token       = Int
 type OptionValue = ByteString
 
 data Option = ContentFormat
@@ -72,8 +72,8 @@ data Option = ContentFormat
             | Size1
 
 data Message = Message
-  { messageHeader :: Header
-  , messageToken  :: Maybe Token
+  { messageHeader  :: Header
+  , messageToken   :: Maybe Token
   , messageOptions :: Maybe [(Option, OptionValue)]
   , messagePayload :: Maybe ByteString
   }
