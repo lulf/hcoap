@@ -8,13 +8,43 @@ module Network.CoAP.Message
 import Data.ByteString
 import Data.Word
 
-data MessageType = Confirmable | NonConfirmable | Acknowledgement | Reset
+data MessageType = CON | NCON | ACK | RESET
+
+data RequestMethod = GET | POST | PUT | DELETE
+
+data ResponseCode = Created
+                  | Deleted
+                  | Valid
+                  | Changed
+                  | Content
+                  | BadRequest
+                  | Unauthorized
+                  | BadOption
+                  | Forbidden
+                  | NotFound
+                  | MethodNotAllowed
+                  | NotAcceptable
+                  | PreconditionFailed
+                  | RequestEntityTooLarge
+                  | UnsupportedFormat
+                  | InternalServerError
+                  | NotImplemented
+                  | BadGateway
+                  | ServiceUnavailable
+                  | GatewayTimeout
+                  | ProxyingNotSupported
+
+data MessageCode = Request RequestMethod
+                 | Response ResponseCode
+                 | Empty
+
+
 
 data Message = Message
   { messageVersion     :: Int
   , messageType        :: MessageType
   , messageTokenLength :: Int
-  , messageCode        :: Word8
+  , messageCode        :: MessageCode
   , messageId          :: Word16
   }
 
