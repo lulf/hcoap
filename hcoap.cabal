@@ -4,22 +4,22 @@
 name:                hcoap
 version:             0.1.0.0
 synopsis:            Library for handling COaP protocol
--- description:         
+-- description:
 license:             BSD3
 license-file:        LICENSE
 author:              Ulf Lilleengen
 maintainer:          ulf.lilleengen@gmail.com
--- copyright:           
+-- copyright:
 category:            Network
 build-type:          Simple
--- extra-source-files:  
+-- extra-source-files:
 cabal-version:       >=1.10
 
 library
   exposed-modules: Network.CoAP
   other-modules:   Network.CoAP.Message
-  -- other-extensions:    
-  build-depends:       base >=4.6 && <4.7,
+  -- other-extensions:
+  build-depends:       base,
                        bytestring
   hs-source-dirs:      src
   default-language:    Haskell2010
