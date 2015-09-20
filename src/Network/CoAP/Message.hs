@@ -1,6 +1,7 @@
 module Network.CoAP.Message
-( Message
-, MessageType
+( Header
+, Message
+, Type
 , parseMessage
 , encodeMessage
 ) where
@@ -8,7 +9,7 @@ module Network.CoAP.Message
 import Data.ByteString
 import Data.Word
 
-data MessageType = CON | NCON | ACK | RESET
+data Type = CON | NON | ACK | RST
 
 data RequestMethod = GET | POST | PUT | DELETE
 
@@ -34,18 +35,44 @@ data ResponseCode = Created
                   | GatewayTimeout
                   | ProxyingNotSupported
 
-data MessageCode = Request RequestMethod
-                 | Response ResponseCode
-                 | Empty
+data Code = Request RequestMethod
+          | Response ResponseCode
+          | Empty
 
 
+
+data Header = Header
+  { messageVersion     :: Version
+  , messageType        :: Type
+  , messageCode        :: Code
+  , messageId          :: Id
+  }
+
+type Version = Int
+type Id = Word16
+type Token = Int
+
+data Option = ContentFormat
+            | ETag
+            | LocationPath
+            | LocationQuery
+            | MaxAge
+            | ProxyUri
+            | ProxyScheme
+            | UriHost
+            | UriPath
+            | UriPort
+            | UriQuery
+            | Accept
+            | IfMatch
+            | IfNoneMatch
+            | Size1
 
 data Message = Message
-  { messageVersion     :: Int
-  , messageType        :: MessageType
-  , messageTokenLength :: Int
-  , messageCode        :: MessageCode
-  , messageId          :: Word16
+  { messageHeader :: Header
+  , messageToken  :: Maybe Token
+  , messageOptions :: Maybe [Option]
+  , messagePayload :: Maybe ByteString
   }
 
 parseMessage :: ByteString -> Maybe Message
