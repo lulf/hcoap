@@ -8,6 +8,8 @@ module Network.CoAP.Message
 
 import Data.ByteString
 import Data.Word
+import Data.Binary
+import Data.Bits
 
 data Type = CON | NON | ACK | RST
 
@@ -38,8 +40,6 @@ data ResponseCode = Created
 data Code = Request RequestMethod
           | Response ResponseCode
           | Empty
-
-
 
 data Header = Header
   { messageVersion     :: Version
