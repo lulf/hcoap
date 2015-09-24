@@ -78,28 +78,33 @@ data Message = Message
   , messagePayload :: Maybe ByteString
   }
 
-decodeMessage :: Get (Message)
+parseType :: Word8 -> Maybe Type
+parseType 0 = Just CON
+parseType 1 = Just NON
+parseType 2 = Just ACK
+parseType 3 = Just RST
+parseType _ = Nothing
+
+decodeMessage :: Get (Maybe Message)
 decodeMessage = do
   tmp <- getWord8
   let version = shiftR ((.&.) tmp 0xC0) 6
-  let msgType = parseType (shiftR (.&.) tmp 0x30) 4
-  let tokenLength = ((.&.) tmp 0x0F) :: Int
+  let msgType = parseType (shiftR ((.&.) tmp 0x30) 4)
+  let tokenLength = fromIntegral ((.&.) tmp 0x0F) :: Int
 
   code <- getWord8
   id <- getWord16be
   let header = Header 1 ACK Empty (fromIntegral 1)
-  return (Message
+  return (Just (Message
          { messageHeader  = header
          , messageToken   = Nothing
          , messageOptions = Nothing
-         , messagePayload = Nothing })
+         , messagePayload = Nothing }))
 
 
 
 decode :: ByteString -> Maybe Message
-decode msg =
-  let parsedMsg = runGet decodeMessage msg
-   in Nothing
+decode msg = runGet decodeMessage msg
 
 encode :: Message -> ByteString
 encode _ = empty
