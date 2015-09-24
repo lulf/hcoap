@@ -80,7 +80,13 @@ data Message = Message
 
 decodeMessage :: Get (Message)
 decodeMessage = do
-  a <- getWord8
+  tmp <- getWord8
+  let version = shiftR ((.&.) tmp 0xC0) 6
+  let msgType = parseType (shiftR (.&.) tmp 0x30) 4
+  let tokenLength = ((.&.) tmp 0x0F) :: Int
+
+  code <- getWord8
+  id <- getWord16be
   let header = Header 1 ACK Empty (fromIntegral 1)
   return (Message
          { messageHeader  = header
