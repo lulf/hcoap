@@ -85,21 +85,24 @@ parseType 2 = Just ACK
 parseType 3 = Just RST
 parseType _ = Nothing
 
+parseHeader :: Word8 -> Maybe Header
+parseHeader tmp = do
+  let version = fromIntegral (shiftR ((.&.) tmp 0xC0) 6)
+  msgType <- parseType (shiftR ((.&.) tmp 0x30) 4)
+  let tokenLength = fromIntegral ((.&.) tmp 0x0F) :: Int
+  return (Header version msgType Empty (fromIntegral 1))
+
 decodeMessage :: Get (Maybe Message)
 decodeMessage = do
   tmp <- getWord8
-  let version = shiftR ((.&.) tmp 0xC0) 6
-  let msgType = parseType (shiftR ((.&.) tmp 0x30) 4)
-  let tokenLength = fromIntegral ((.&.) tmp 0x0F) :: Int
-
   code <- getWord8
   id <- getWord16be
-  let header = Header 1 ACK Empty (fromIntegral 1)
-  return (Just (Message
-         { messageHeader  = header
+  let header = parseHeader tmp
+  return (maybe Nothing (\hdr -> Just (Message
+         { messageHeader  = hdr
          , messageToken   = Nothing
          , messageOptions = Nothing
-         , messagePayload = Nothing }))
+         , messagePayload = Nothing })) header)
 
 
 
