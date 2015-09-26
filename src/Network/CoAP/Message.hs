@@ -75,7 +75,7 @@ data Option = ContentFormat
 data Message = Message
   { messageHeader  :: Header
   , messageToken   :: Maybe Token
-  , messageOptions :: Maybe [(Option, OptionValue)]
+  , messageOptions :: [(Option, OptionValue)]
   , messagePayload :: Maybe ByteString
   }
 
@@ -137,15 +137,37 @@ getMessageToken n = do
   str <- getByteString n
   return (Just str)
 
+getOption :: Get (Option, OptionValue)
+getOption = fail "No supported options"
+
+getOptions :: Get ([(Option, OptionValue)])
+getOptions = do
+  marker <- getWord8
+  if marker == 0xFF
+     then return ([])
+     else do
+       opt <- getOption
+       opts <- getOptions
+       return (opt:opts)
+
+getPayload :: Get (Maybe ByteString)
+getPayload = do
+  str <- getRemainingLazyByteString
+  return (if (Data.ByteString.Lazy.null str)
+         then Nothing
+         else Just str)
+
 
 getMessage :: Get Message
 getMessage = do
   (header, tokenLength) <- getHeader
-  messageToken <- getMessageToken tokenLength
+  token <- getMessageToken tokenLength
+  options <- getOptions
+  payload <- getPayload
   return (Message { messageHeader  = header
-             , messageToken   = Nothing
-             , messageOptions = Nothing
-             , messagePayload = Nothing })
+             , messageToken   = token
+             , messageOptions = options
+             , messagePayload = payload })
 
 
 
