@@ -96,7 +96,6 @@ getResponseCode :: Word8 -> Get ResponseCode
 getResponseCode _ = return (Created)
 
 getCode :: Word8 -> Word8 -> Get Code
-
 getCode 0 0 = return (Empty)
 getCode 0 detail = do
   method <- getRequestMethod detail
@@ -109,12 +108,19 @@ getCode code detail =
        return (Response responseCode)
      else fail "Unknown class"
 
-getHeader :: Get Header
+
+getTokenLength :: Int -> Get Int
+getTokenLength len =
+  if len > 8
+     then fail "Invalid token length"
+     else return (len)
+
+getHeader :: Get (Header, Int)
 getHeader = do
   tmp <- getWord8
   let version = fromIntegral (shiftR ((.&.) tmp 0xC0) 6)
   msgType <- getType (shiftR ((.&.) tmp 0x30) 4)
-  let tokenLength = fromIntegral ((.&.) tmp 0x0F) :: Int
+  tokenLength <- getTokenLength (fromIntegral ((.&.) tmp 0x0F) :: Int)
 
   c <- getWord8
   let clazz  = fromIntegral (shiftR ((.&.) c 0x70) 5)
@@ -122,11 +128,11 @@ getHeader = do
   code <- getCode clazz detail
 
   id <- getWord16be
-  return (Header version msgType Empty (fromIntegral 1))
+  return ((Header version msgType code (fromIntegral id)), tokenLength)
 
 getMessage :: Get Message
 getMessage = do
-  header <- getHeader
+  (header, tokenLength) <- getHeader
   return (Message { messageHeader  = header
              , messageToken   = Nothing
              , messageOptions = Nothing
