@@ -8,6 +8,7 @@ module Network.CoAP.Message
 ) where
 
 import Data.ByteString.Lazy
+import qualified Data.ByteString as BS
 import Data.Word
 import Data.Binary hiding (encode, decode)
 import Data.Binary.Get
@@ -52,7 +53,7 @@ data Header = Header
 
 type Version     = Int
 type Id          = Word16
-type Token       = Int
+type Token       = BS.ByteString
 type OptionValue = ByteString
 
 data Option = ContentFormat
@@ -130,9 +131,17 @@ getHeader = do
   id <- getWord16be
   return ((Header version msgType code (fromIntegral id)), tokenLength)
 
+getMessageToken :: Int -> Get (Maybe Token)
+getMessageToken 0 = return (Nothing)
+getMessageToken n = do
+  str <- getByteString n
+  return (Just str)
+
+
 getMessage :: Get Message
 getMessage = do
   (header, tokenLength) <- getHeader
+  messageToken <- getMessageToken tokenLength
   return (Message { messageHeader  = header
              , messageToken   = Nothing
              , messageOptions = Nothing
