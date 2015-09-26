@@ -78,35 +78,34 @@ data Message = Message
   , messagePayload :: Maybe ByteString
   }
 
-parseType :: Word8 -> Maybe Type
-parseType 0 = Just CON
-parseType 1 = Just NON
-parseType 2 = Just ACK
-parseType 3 = Just RST
-parseType _ = Nothing
+getType :: Word8 -> Get Type
+getType 0 = return $ CON
+getType 1 = return $ NON
+getType 2 = return $ ACK
+getType 3 = return $ RST
+getType _ = fail "Unknown type"
 
-parseHeader :: Word8 -> Maybe Header
-parseHeader tmp = do
-  let version = fromIntegral (shiftR ((.&.) tmp 0xC0) 6)
-  msgType <- parseType (shiftR ((.&.) tmp 0x30) 4)
-  let tokenLength = fromIntegral ((.&.) tmp 0x0F) :: Int
-  return (Header version msgType Empty (fromIntegral 1))
-
-decodeMessage :: Get (Maybe Message)
-decodeMessage = do
+getHeader :: Get Header
+getHeader = do
   tmp <- getWord8
   code <- getWord8
   id <- getWord16be
-  let header = parseHeader tmp
-  return (maybe Nothing (\hdr -> Just (Message
-         { messageHeader  = hdr
-         , messageToken   = Nothing
-         , messageOptions = Nothing
-         , messagePayload = Nothing })) header)
+  let version = fromIntegral (shiftR ((.&.) tmp 0xC0) 6)
+  msgType <- getType (shiftR ((.&.) tmp 0x30) 4)
+  let tokenLength = fromIntegral ((.&.) tmp 0x0F) :: Int
+  return (Header version msgType Empty (fromIntegral 1))
+
+decodeMessage :: Get Message
+decodeMessage = do
+  header <- getHeader
+  return (Message { messageHeader  = header
+                  , messageToken   = Nothing
+                  , messageOptions = Nothing
+                  , messagePayload = Nothing })
 
 
 
-decode :: ByteString -> Maybe Message
+decode :: ByteString -> Message
 decode msg = runGet decodeMessage msg
 
 encode :: Message -> ByteString
