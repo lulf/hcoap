@@ -3,7 +3,7 @@ module Network.CoAP.Message
 , Message
 , Type
 , decode
-, decodeMessage
+, getMessage
 , encode
 ) where
 
@@ -79,34 +79,63 @@ data Message = Message
   }
 
 getType :: Word8 -> Get Type
-getType 0 = return $ CON
-getType 1 = return $ NON
-getType 2 = return $ ACK
-getType 3 = return $ RST
+getType 0 = return (CON)
+getType 1 = return (NON)
+getType 2 = return (ACK)
+getType 3 = return (RST)
 getType _ = fail "Unknown type"
+
+getRequestMethod :: Word8 -> Get RequestMethod
+getRequestMethod 1 = return (GET)
+getRequestMethod 2 = return (POST)
+getRequestMethod 3 = return (PUT)
+getRequestMethod 4 = return (DELETE)
+getRequestMethod _ = fail "Unknown request method"
+
+getResponseCode :: Word8 -> Get ResponseCode
+getResponseCode _ = return (Created)
+
+getCode :: Word8 -> Word8 -> Get Code
+
+getCode 0 0 = return (Empty)
+getCode 0 detail = do
+  method <- getRequestMethod detail
+  return (Request method)
+
+getCode code detail =
+  if code == 2 || code == 4 || code == 5
+     then do
+       responseCode <- getResponseCode detail
+       return (Response responseCode)
+     else fail "Unknown class"
 
 getHeader :: Get Header
 getHeader = do
   tmp <- getWord8
-  code <- getWord8
-  id <- getWord16be
   let version = fromIntegral (shiftR ((.&.) tmp 0xC0) 6)
   msgType <- getType (shiftR ((.&.) tmp 0x30) 4)
   let tokenLength = fromIntegral ((.&.) tmp 0x0F) :: Int
+
+  c <- getWord8
+  let clazz  = fromIntegral (shiftR ((.&.) c 0x70) 5)
+  let detail = fromIntegral ((.&.) c 0x1F)
+  code <- getCode clazz detail
+
+  id <- getWord16be
   return (Header version msgType Empty (fromIntegral 1))
 
-decodeMessage :: Get Message
-decodeMessage = do
+getMessage :: Get Message
+getMessage = do
   header <- getHeader
   return (Message { messageHeader  = header
-                  , messageToken   = Nothing
-                  , messageOptions = Nothing
-                  , messagePayload = Nothing })
+             , messageToken   = Nothing
+             , messageOptions = Nothing
+             , messagePayload = Nothing })
 
 
 
 decode :: ByteString -> Message
-decode msg = runGet decodeMessage msg
+decode msg = runGet getMessage msg
 
 encode :: Message -> ByteString
 encode _ = empty
