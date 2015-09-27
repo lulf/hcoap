@@ -10,6 +10,7 @@ module Network.CoAP.Message
 import Data.ByteString.Lazy
 import qualified Data.ByteString as BS
 import Data.Word
+import Data.Maybe
 import Data.Binary hiding (encode, decode)
 import Data.Binary.Get
 import Data.Binary.Put
@@ -111,18 +112,18 @@ getCode code detail =
      else fail "Unknown class"
 
 
-getTokenLength :: Int -> Get Int
+getTokenLength :: Word8 -> Get Word8
 getTokenLength len =
   if len > 8
      then fail "Invalid token length"
      else return (len)
 
-getHeader :: Get (Header, Int)
+getHeader :: Get (Header, Word8)
 getHeader = do
   tmp <- getWord8
   let version = fromIntegral (shiftR ((.&.) tmp 0xC0) 6)
   msgType <- getType (shiftR ((.&.) tmp 0x30) 4)
-  tokenLength <- getTokenLength (fromIntegral ((.&.) tmp 0x0F) :: Int)
+  tokenLength <- getTokenLength ((.&.) tmp 0x0F)
 
   c <- getWord8
   let clazz  = fromIntegral (shiftR ((.&.) c 0x70) 5)
@@ -132,10 +133,10 @@ getHeader = do
   id <- getWord16be
   return ((Header version msgType code (fromIntegral id)), tokenLength)
 
-getToken :: Int -> Get (Maybe Token)
+getToken :: Word8 -> Get (Maybe Token)
 getToken 0 = return (Nothing)
 getToken n = do
-  str <- getByteString n
+  str <- getByteString (fromIntegral n)
   return (Just str)
 
 getOption :: Get (Option, OptionValue)
@@ -173,8 +174,36 @@ getMessage = do
 decode :: ByteString -> Message
 decode msg = runGet getMessage msg
 
-putHeader :: Header -> Put
-putHeader header = return ()
+--  let version = fromIntegral (shiftR ((.&.) tmp 0xC0) 6)
+--  msgType <- getType (shiftR ((.&.) tmp 0x30) 4)
+--  tokenLength <- getTokenLength (fromIntegral ((.&.) tmp 0x0F) :: Int)
+--
+--  c <- getWord8
+--  let clazz  = fromIntegral (shiftR ((.&.) c 0x70) 5)
+--  let detail = fromIntegral ((.&.) c 0x1F)
+--  code <- getCode clazz detail
+--
+--  id <- getWord16be
+--  return ((Header version msgType code (fromIntegral id)), tokenLength)
+
+encodeType :: Type -> Word8
+encodeType CON = 0
+encodeType NON = 1
+encodeType ACK = 2
+encodeType RST = 3
+
+putHeader :: Header -> Word8 -> Put
+putHeader header tokenLength = do
+  let version = fromIntegral (messageVersion header) :: Word8
+  let eType   = encodeType (messageType header)
+
+  let code    = messageCode    header
+  let id      = messageId      header
+
+  putWord8 ((.|.) ((.|.) (shiftL version 6) (shiftL eType 4)) ((.&.) tokenLength 0x0F))
+
+  return ()
+
 
 putToken :: Maybe Token -> Put
 putToken token = return ()
@@ -187,8 +216,11 @@ putPayload payload = return ()
 
 putMessage :: Message -> Put
 putMessage msg = do
-  putHeader (messageHeader msg)
-  putToken (messageToken msg)
+  let token = messageToken msg
+  let tokenLength = case token of Just t -> BS.length t
+                                  _ -> 0
+  putHeader  (messageHeader  msg) (fromIntegral tokenLength)
+  putToken   token
   putOptions (messageOptions msg)
   putPayload (messagePayload msg)
   return ()
