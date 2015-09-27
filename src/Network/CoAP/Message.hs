@@ -192,6 +192,9 @@ encodeType NON = 1
 encodeType ACK = 2
 encodeType RST = 3
 
+encodeCode :: Code -> Word8
+encodeCode Empty = 0
+
 putHeader :: Header -> Word8 -> Put
 putHeader header tokenLength = do
   let version = fromIntegral (messageVersion header) :: Word8
@@ -201,6 +204,7 @@ putHeader header tokenLength = do
   let id      = messageId      header
 
   putWord8 ((.|.) ((.|.) (shiftL version 6) (shiftL eType 4)) ((.&.) tokenLength 0x0F))
+  putWord8 (
 
   return ()
 
