@@ -192,31 +192,44 @@ encodeType NON = 1
 encodeType ACK = 2
 encodeType RST = 3
 
+encodeRequestMethod :: RequestMethod -> Word8
+encodeRequestMethod GET    = 1
+encodeRequestMethod POST   = 2
+encodeRequestMethod PUT    = 3
+encodeRequestMethod DELETE = 4
+
+encodeResponseCode :: ResponseCode -> Word8
+encodeResponseCode _ = 0
+
 encodeCode :: Code -> Word8
 encodeCode Empty = 0
+encodeCode (Request detail) = encodeRequestMethod detail
+encodeCode (Response detail) = (.|.) (shiftL 2 5) (encodeResponseCode detail)
 
 putHeader :: Header -> Word8 -> Put
 putHeader header tokenLength = do
   let version = fromIntegral (messageVersion header) :: Word8
   let eType   = encodeType (messageType header)
-
   let code    = messageCode    header
   let id      = messageId      header
 
   putWord8 ((.|.) ((.|.) (shiftL version 6) (shiftL eType 4)) ((.&.) tokenLength 0x0F))
-  putWord8 (
-
-  return ()
+  putWord8 (encodeCode code)
+  putWord16be id
 
 
 putToken :: Maybe Token -> Put
-putToken token = return ()
+putToken Nothing = return ()
+putToken (Just token) = putByteString token
 
 putOptions :: [(Option, OptionValue)] -> Put
 putOptions options = return ()
 
 putPayload :: Maybe ByteString -> Put
-putPayload payload = return ()
+putPayload Nothing = return ()
+putPayload (Just payload) = do
+  putWord8 0xFF
+  putLazyByteString payload
 
 putMessage :: Message -> Put
 putMessage msg = do
@@ -227,7 +240,6 @@ putMessage msg = do
   putToken   token
   putOptions (messageOptions msg)
   putPayload (messagePayload msg)
-  return ()
 
 encode :: Message -> ByteString
 encode msg = runPut (putMessage msg)
