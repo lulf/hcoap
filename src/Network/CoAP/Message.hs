@@ -12,6 +12,7 @@ import qualified Data.ByteString as BS
 import Data.Word
 import Data.Binary hiding (encode, decode)
 import Data.Binary.Get
+import Data.Binary.Put
 import Data.Bits
 
 data Type = CON | NON | ACK | RST
@@ -131,9 +132,9 @@ getHeader = do
   id <- getWord16be
   return ((Header version msgType code (fromIntegral id)), tokenLength)
 
-getMessageToken :: Int -> Get (Maybe Token)
-getMessageToken 0 = return (Nothing)
-getMessageToken n = do
+getToken :: Int -> Get (Maybe Token)
+getToken 0 = return (Nothing)
+getToken n = do
   str <- getByteString n
   return (Just str)
 
@@ -161,7 +162,7 @@ getPayload = do
 getMessage :: Get Message
 getMessage = do
   (header, tokenLength) <- getHeader
-  token <- getMessageToken tokenLength
+  token <- getToken tokenLength
   options <- getOptions
   payload <- getPayload
   return (Message { messageHeader  = header
@@ -169,10 +170,28 @@ getMessage = do
              , messageOptions = options
              , messagePayload = payload })
 
-
-
 decode :: ByteString -> Message
 decode msg = runGet getMessage msg
 
+putHeader :: Header -> Put
+putHeader header = return ()
+
+putToken :: Maybe Token -> Put
+putToken token = return ()
+
+putOptions :: [(Option, OptionValue)] -> Put
+putOptions options = return ()
+
+putPayload :: Maybe ByteString -> Put
+putPayload payload = return ()
+
+putMessage :: Message -> Put
+putMessage msg = do
+  putHeader (messageHeader msg)
+  putToken (messageToken msg)
+  putOptions (messageOptions msg)
+  putPayload (messagePayload msg)
+  return ()
+
 encode :: Message -> ByteString
-encode _ = empty
+encode msg = runPut (putMessage msg)
