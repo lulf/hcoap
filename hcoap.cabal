@@ -17,10 +17,11 @@ cabal-version:       >=1.10
 
 library
   exposed-modules: Network.CoAP
-  other-modules:   Network.CoAP.Message
+  other-modules:   Network.CoAP.Message, Network.CoAP.Messaging
   -- other-extensions:
   build-depends:       base,
                        bytestring,
-                       binary
+                       binary,
+                       network
   hs-source-dirs:      src
   default-language:    Haskell2010

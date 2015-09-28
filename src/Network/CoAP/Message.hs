@@ -1,10 +1,21 @@
 module Network.CoAP.Message
-( Header
-, Message
-, Type
+( Header (Header)
+, Message (Message)
+, Type (CON, NON, ACK, RST)
 , decode
 , getMessage
 , encode
+, RequestMethod
+, ResponseCode
+, Code (Empty, Request, Response)
+, messageCode
+, messageHeader
+, messageId
+, messageToken
+, messagePayload
+, messageVersion
+, messageType
+, messageOptions
 ) where
 
 import Data.ByteString.Lazy
@@ -15,6 +26,7 @@ import Data.Binary hiding (encode, decode)
 import Data.Binary.Get
 import Data.Binary.Put
 import Data.Bits
+import Prelude hiding (null, length, fromStrict, toStrict)
 
 data Type = CON | NON | ACK | RST
 
@@ -155,7 +167,7 @@ getOptions = do
 getPayload :: Get (Maybe ByteString)
 getPayload = do
   str <- getRemainingLazyByteString
-  return (if (Data.ByteString.Lazy.null str)
+  return (if null str
          then Nothing
          else Just str)
 
@@ -171,20 +183,8 @@ getMessage = do
              , messageOptions = options
              , messagePayload = payload })
 
-decode :: ByteString -> Message
-decode msg = runGet getMessage msg
-
---  let version = fromIntegral (shiftR ((.&.) tmp 0xC0) 6)
---  msgType <- getType (shiftR ((.&.) tmp 0x30) 4)
---  tokenLength <- getTokenLength (fromIntegral ((.&.) tmp 0x0F) :: Int)
---
---  c <- getWord8
---  let clazz  = fromIntegral (shiftR ((.&.) c 0x70) 5)
---  let detail = fromIntegral ((.&.) c 0x1F)
---  code <- getCode clazz detail
---
---  id <- getWord16be
---  return ((Header version msgType code (fromIntegral id)), tokenLength)
+decode :: BS.ByteString -> Message
+decode msg = runGet getMessage (fromStrict msg)
 
 encodeType :: Type -> Word8
 encodeType CON = 0
@@ -212,7 +212,6 @@ putHeader header tokenLength = do
   let eType   = encodeType (messageType header)
   let code    = messageCode    header
   let id      = messageId      header
-
   putWord8 ((.|.) ((.|.) (shiftL version 6) (shiftL eType 4)) ((.&.) tokenLength 0x0F))
   putWord8 (encodeCode code)
   putWord16be id
@@ -241,5 +240,5 @@ putMessage msg = do
   putOptions (messageOptions msg)
   putPayload (messagePayload msg)
 
-encode :: Message -> ByteString
-encode msg = runPut (putMessage msg)
+encode :: Message -> BS.ByteString
+encode msg = toStrict (runPut (putMessage msg))
