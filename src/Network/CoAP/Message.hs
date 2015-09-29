@@ -18,6 +18,9 @@ module Network.CoAP.Message
 , messageOptions
 ) where
 
+import Network.CoAP.Options
+import Network.CoAP.Request hiding (Request)
+import Network.CoAP.Response hiding (Response)
 import Data.ByteString.Lazy
 import qualified Data.ByteString as BS
 import Data.Word
@@ -28,35 +31,14 @@ import Data.Binary.Put
 import Data.Bits
 import Prelude hiding (null, length, fromStrict, toStrict)
 
-data Type = CON | NON | ACK | RST
+type RequestMethod = Method
 
-data RequestMethod = GET | POST | PUT | DELETE
-
-data ResponseCode = Created
-                  | Deleted
-                  | Valid
-                  | Changed
-                  | Content
-                  | BadRequest
-                  | Unauthorized
-                  | BadOption
-                  | Forbidden
-                  | NotFound
-                  | MethodNotAllowed
-                  | NotAcceptable
-                  | PreconditionFailed
-                  | RequestEntityTooLarge
-                  | UnsupportedFormat
-                  | InternalServerError
-                  | NotImplemented
-                  | BadGateway
-                  | ServiceUnavailable
-                  | GatewayTimeout
-                  | ProxyingNotSupported
 
 data Code = Request RequestMethod
           | Response ResponseCode
           | Empty
+
+data Type = CON | NON | ACK | RST
 
 data Header = Header
   { messageVersion     :: Version
@@ -68,23 +50,6 @@ data Header = Header
 type Version     = Int
 type Id          = Word16
 type Token       = BS.ByteString
-type OptionValue = ByteString
-
-data Option = ContentFormat
-            | ETag
-            | LocationPath
-            | LocationQuery
-            | MaxAge
-            | ProxyUri
-            | ProxyScheme
-            | UriHost
-            | UriPath
-            | UriPort
-            | UriQuery
-            | Accept
-            | IfMatch
-            | IfNoneMatch
-            | Size1
 
 data Message = Message
   { messageHeader  :: Header

@@ -17,7 +17,7 @@ cabal-version:       >=1.10
 
 library
   exposed-modules: Network.CoAP
-  other-modules:   Network.CoAP.Message, Network.CoAP.Messaging
+  other-modules:   Network.CoAP.Message, Network.CoAP.Messaging, Network.CoAP.Request, Network.CoAP.Response, Network.CoAP.Options, Network.CoAP.Payload
   -- other-extensions:
   build-depends:       base,
                        bytestring,
