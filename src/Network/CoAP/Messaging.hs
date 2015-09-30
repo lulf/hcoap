@@ -1,12 +1,14 @@
 
 module Network.CoAP.Messaging
-(
-  recvMessage,
-  sendMessage
+( recvRequest
+, sendResponse
+, sendRequest
+, MessagingStore
 ) where
 
 import Network.CoAP.Message
 import Control.Monad
+import Control.Monad.ST.Lazy
 import Network.Socket hiding (send, sendTo, recv, recvFrom)
 import qualified Network.Socket.ByteString as N
 
@@ -27,16 +29,24 @@ sendResponse sock hostAddr response = do
   N.sendTo sock (encode response) hostAddr
   return ()
 
-recvMessage :: Socket -> (RequestMethod -> ResponseCode) -> IO ()
-recvMessage sock handler = do
+type MessageList = [Message]
+type MessageStore = State MessageList
+
+queueMessage :: Message -> MessagingStore
+queueMessage message = do
+  msgList <- get
+  let newList = message:msgList
+  put newList
+
+recvRequest :: Socket -> MessagingStore -> IO (Request)
+recvRequest sock store = do
   (msgData, hostAddr) <- N.recvFrom sock 65535
   let message = decode msgData
-  let request = messageCode (messageHeader message)
-  let response =
-        case request of
-          Request method -> Just (createResponse (handler method) message)
-          _              -> Nothing
-  forM_ response (sendResponse sock hostAddr)
+  evalState (queueMessage message) store
+  createRequest hostAddr message
+  let msgType = messageType (messageHeader message)
 
-sendMessage :: Message -> Socket -> IO ()
-sendMessage message sock = return ()
+sendResponse :: Socket -> MessagingStore -> Response -> IO ()
+sendResponse sock store response = return ()
+
+sendRequest :: Socket -> MessagingStore -> Request -> IO Response
