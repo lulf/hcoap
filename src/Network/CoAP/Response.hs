@@ -2,6 +2,7 @@ module Network.CoAP.Response where
 
 import Network.CoAP.Options
 import Network.CoAP.Payload
+import Network.Socket
 
 data ResponseCode = Created
                   | Deleted
@@ -25,4 +26,8 @@ data ResponseCode = Created
                   | GatewayTimeout
                   | ProxyingNotSupported
 
-data Response = Response ResponseCode [(Option, OptionValue)] Payload
+data Response = Response
+  { responseCode    :: ResponseCode
+  , responseOptions :: [(Option, OptionValue)]
+  , responsePayload :: Payload
+  , requestOrigin   :: SockAddr }
