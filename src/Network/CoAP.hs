@@ -9,7 +9,7 @@ import Network.CoAP.Message
 import Network.CoAP.Messaging
 
 runServer sock requestHandler = do
-  let store = MessagingStore
+  let store = createMessageStore
   request <- recvRequest sock store
   response <- requestHandler request
   sendResponse sock store response

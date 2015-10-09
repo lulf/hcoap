@@ -19,6 +19,7 @@ module Network.CoAP.Message
 ) where
 
 import Network.CoAP.Options
+import Network.CoAP.Payload
 import Network.CoAP.Request hiding (Request)
 import Network.CoAP.Response hiding (Response)
 import Data.ByteString.Lazy
@@ -55,7 +56,7 @@ data Message = Message
   { messageHeader  :: Header
   , messageToken   :: Maybe Token
   , messageOptions :: [(Option, OptionValue)]
-  , messagePayload :: Maybe ByteString
+  , messagePayload :: Maybe Payload
   }
 
 getType :: Word8 -> Get Type
@@ -129,12 +130,12 @@ getOptions = do
        opts <- getOptions
        return (opt:opts)
 
-getPayload :: Get (Maybe ByteString)
+getPayload :: Get (Maybe Payload)
 getPayload = do
   str <- getRemainingLazyByteString
   return (if null str
          then Nothing
-         else Just str)
+         else Just (BS.pack (unpack str)))
 
 
 getMessage :: Get Message
@@ -189,11 +190,11 @@ putToken (Just token) = putByteString token
 putOptions :: [(Option, OptionValue)] -> Put
 putOptions options = return ()
 
-putPayload :: Maybe ByteString -> Put
+putPayload :: Maybe Payload -> Put
 putPayload Nothing = return ()
 putPayload (Just payload) = do
   putWord8 0xFF
-  putLazyByteString payload
+  putByteString payload
 
 putMessage :: Message -> Put
 putMessage msg = do

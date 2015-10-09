@@ -3,6 +3,7 @@ module Network.CoAP.Messaging
 ( recvRequest
 , sendResponse
 , sendRequest
+, createMessageStore
 , MessageStore
 ) where
 
@@ -15,13 +16,17 @@ import Network.Socket hiding (send, sendTo, recv, recvFrom)
 import qualified Network.Socket.ByteString as N
 
 type MessageList = [Message]
-type MessageStore = State MessageList Message
+type MessageStore = State MessageList ()
+
+createMessageStore :: MessageStore
+createMessageStore = return ()
 
 queueMessage :: Message -> MessageStore
 queueMessage message = do
   msgList <- get
   let newList = message:msgList
   put newList
+  return ()
 
 createRequest :: SockAddr -> Message -> Req.Method -> Req.Request
 createRequest clientHost message method =
@@ -35,10 +40,10 @@ handleRequest hostAddr message method store =
   createRequest hostAddr message method
 
 handleResponse :: Message -> Res.ResponseCode -> MessageStore
-handleResponse _ _ _ = error "Hey"
+handleResponse _ _ = error "Hey"
 
 handleEmpty :: Message -> MessageStore
-handleEmpty message store = error "hey"
+handleEmpty message = error "hey"
 
 recvRequest :: Socket -> MessageStore -> IO (Req.Request)
 recvRequest sock store = do
@@ -47,7 +52,9 @@ recvRequest sock store = do
   let header  = messageHeader message
   let code    = messageCode header
   case code of
-    Request method -> handleRequest hostAddr message method store
+    Request method -> do
+      --handleRequest hostAddr message method store
+      recvRequest sock store
     Response responseCode -> do
       --let x = handleResponse message responseCode store
       recvRequest sock store

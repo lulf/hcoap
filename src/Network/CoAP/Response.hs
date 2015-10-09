@@ -30,4 +30,4 @@ data Response = Response
   { responseCode    :: ResponseCode
   , responseOptions :: [(Option, OptionValue)]
   , responsePayload :: Payload
-  , requestOrigin   :: SockAddr }
+  , responseOrigin   :: SockAddr }
