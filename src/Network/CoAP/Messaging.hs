@@ -12,6 +12,7 @@ import Data.List (deleteBy)
 import qualified Network.CoAP.Request as Req
 import qualified Network.CoAP.Response as Res
 import Control.Monad
+import Data.Maybe
 import Control.Monad.State.Lazy
 import Network.Socket hiding (send, sendTo, recv, recvFrom)
 import qualified Network.Socket.ByteString as N
@@ -31,11 +32,17 @@ queueInboundMessage message = do
   put (newInbound, outbound)
   return ()
 
+takeMessage :: MessageId -> MessageList -> (Maybe Message, MessageList)
+takeMessage messageId messageList = do
+  let message = lookup messageId messageList
+  let filteredList = filter (\(id, _) -> id == messageId) messageList
+  (message, filteredList)
+    
+
 takeInboundMessage :: MessageId -> MessagingState (Maybe Message)
 takeInboundMessage messageId = do
   (inbound, outbound) <- get
-  let message = lookup messageId inbound
-  let newInbound = filter (\(id, _) -> id == messageId) inbound
+  let (message, newInbound) = takeMessage messageId inbound
   put (newInbound, outbound)
   return message
 
@@ -56,12 +63,25 @@ handleResponse :: Message -> Res.ResponseCode -> MessagingState ()
 handleResponse _ _ = return ()
 
 handleEmpty :: Message -> MessagingState ()
-handleEmpty _ = return ()
+handleEmpty message = do
+  (inbound, outbound) <- get
+  let header = messageHeader message
+  let mid = messageId header
+  let mtype = messageType header
+  let (origMessage, newOutbound) = takeMessage mid outbound
+
+  case mtype of
+    ACK -> do
+        if isJust origMessage
+          then do
+            put (inbound, newOutbound)
+            return ()
+          else return ()
+    _ -> error "Unable to handle empty message type"
 
 recvRequest :: Socket -> MessagingState Req.Request
 recvRequest sock = do
   (msgData, hostAddr) <- liftIO (N.recvFrom sock 65535)
-  let store = createMessagingState
   let message = decode msgData
   let header  = messageHeader message
   let code    = messageCode header
