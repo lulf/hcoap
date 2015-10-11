@@ -3,8 +3,8 @@ module Network.CoAP.Messaging
 ( recvRequest
 , sendResponse
 , sendRequest
-, createMessageStore
-, MessageStore
+, createMessagingState
+, MessagingState
 ) where
 
 import Network.CoAP.Message
@@ -17,9 +17,10 @@ import qualified Network.Socket.ByteString as N
 
 -- A message store contains an inbound and outbound list of messages that needs to be ACKed
 type MessageStore = ([Message], [Message])
+type MessagingState a = StateT MessageStore IO a
 
-createMessageStore :: MessageStore
-createMessageStore = ([], [])
+createMessagingState :: MessageStore
+createMessagingState = ([], [])
 
 queueInboundMessage :: Message -> State MessageStore ()
 queueInboundMessage message = do
@@ -46,24 +47,26 @@ handleResponse _ _ store = return (store)
 handleEmpty :: Message -> MessageStore -> IO MessageStore
 handleEmpty _ store = return (store)
 
-recvRequest :: Socket -> MessageStore -> IO (Req.Request, MessageStore)
-recvRequest sock store = do
-  (msgData, hostAddr) <- N.recvFrom sock 65535
+recvRequest :: Socket -> MessagingState Req.Request
+recvRequest sock = do
+  (msgData, hostAddr) <- liftIO (N.recvFrom sock 65535)
+  let store = createMessagingState
   let message = decode msgData
   let header  = messageHeader message
   let code    = messageCode header
   case code of
     Request method -> do
-      return (handleRequest hostAddr message method store)
+      let (req, store) = handleRequest hostAddr message method store
+      return req
     Response responseCode -> do
-      newStore <- handleResponse message responseCode store
-      recvRequest sock newStore
+      _ <- liftIO (handleResponse message responseCode store)
+      recvRequest sock
     Empty -> do
-      newStore <- handleEmpty message store
-      recvRequest sock newStore
+      _ <- liftIO (handleEmpty message store)
+      recvRequest sock
 
-sendResponse :: Socket -> MessageStore -> Res.Response -> IO ()
-sendResponse sock store response = return ()
+sendResponse :: Socket -> Res.Response -> MessagingState ()
+sendResponse sock response = return ()
 
 sendRequest :: Socket -> MessageStore -> Req.Request -> IO Res.Response
 sendRequest _ _ _ = error "Not defined"
