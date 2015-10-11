@@ -35,18 +35,18 @@ createRequest clientHost message method =
                , Req.requestPayload = messagePayload message
                , Req.requestOrigin  = clientHost }
 
-handleRequest :: SockAddr -> Message -> Req.Method -> MessageStore -> Req.Request
+handleRequest :: SockAddr -> Message -> Req.Method -> MessageStore -> (Req.Request, MessageStore)
 handleRequest hostAddr message method store = do
-  newState <- evalState (queueInboundMessage message) store
-  createRequest hostAddr message method
+  let (_, newStore) = runState (queueInboundMessage message) store
+  (createRequest hostAddr message method, newStore)
 
-handleResponse :: Message -> Res.ResponseCode -> MessageStore
-handleResponse _ _ = error "Hey"
+handleResponse :: Message -> Res.ResponseCode -> MessageStore -> IO MessageStore
+handleResponse _ _ store = return (store)
 
-handleEmpty :: Message -> MessageStore
-handleEmpty message = error "hey"
+handleEmpty :: Message -> MessageStore -> IO MessageStore
+handleEmpty _ store = return (store)
 
-recvRequest :: Socket -> (State MessageStore Message, State MessageStore ())  -> IO (Req.Request)
+recvRequest :: Socket -> MessageStore -> IO (Req.Request, MessageStore)
 recvRequest sock store = do
   (msgData, hostAddr) <- N.recvFrom sock 65535
   let message = decode msgData
@@ -54,14 +54,13 @@ recvRequest sock store = do
   let code    = messageCode header
   case code of
     Request method -> do
-      handleRequest hostAddr message method store
-      recvRequest sock store
+      return (handleRequest hostAddr message method store)
     Response responseCode -> do
-      --let x = handleResponse message responseCode store
-      recvRequest sock store
+      newStore <- handleResponse message responseCode store
+      recvRequest sock newStore
     Empty -> do
-      -- handleEmpty message store
-      recvRequest sock store
+      newStore <- handleEmpty message store
+      recvRequest sock newStore
 
 sendResponse :: Socket -> MessageStore -> Res.Response -> IO ()
 sendResponse sock store response = return ()
