@@ -15,17 +15,17 @@ import Control.Monad.State.Lazy
 import Network.Socket hiding (send, sendTo, recv, recvFrom)
 import qualified Network.Socket.ByteString as N
 
-type MessageList = [Message]
-type MessageStore = State MessageList ()
+-- A message store contains an inbound and outbound list of messages that needs to be ACKed
+type MessageStore = ([Message], [Message])
 
 createMessageStore :: MessageStore
-createMessageStore = return ()
+createMessageStore = ([], [])
 
-queueMessage :: Message -> MessageStore
-queueMessage message = do
-  msgList <- get
-  let newList = message:msgList
-  put newList
+queueInboundMessage :: Message -> State MessageStore ()
+queueInboundMessage message = do
+  (inbound, outbound) <- get
+  let newInbound = message:inbound
+  put (newInbound, outbound)
   return ()
 
 createRequest :: SockAddr -> Message -> Req.Method -> Req.Request
@@ -36,7 +36,8 @@ createRequest clientHost message method =
                , Req.requestOrigin  = clientHost }
 
 handleRequest :: SockAddr -> Message -> Req.Method -> MessageStore -> Req.Request
-handleRequest hostAddr message method store =
+handleRequest hostAddr message method store = do
+  newState <- evalState (queueInboundMessage message) store
   createRequest hostAddr message method
 
 handleResponse :: Message -> Res.ResponseCode -> MessageStore
@@ -45,7 +46,7 @@ handleResponse _ _ = error "Hey"
 handleEmpty :: Message -> MessageStore
 handleEmpty message = error "hey"
 
-recvRequest :: Socket -> MessageStore -> IO (Req.Request)
+recvRequest :: Socket -> (State MessageStore Message, State MessageStore ())  -> IO (Req.Request)
 recvRequest sock store = do
   (msgData, hostAddr) <- N.recvFrom sock 65535
   let message = decode msgData
@@ -53,7 +54,7 @@ recvRequest sock store = do
   let code    = messageCode header
   case code of
     Request method -> do
-      --handleRequest hostAddr message method store
+      handleRequest hostAddr message method store
       recvRequest sock store
     Response responseCode -> do
       --let x = handleResponse message responseCode store

@@ -45,11 +45,11 @@ data Header = Header
   { messageVersion     :: Version
   , messageType        :: Type
   , messageCode        :: Code
-  , messageId          :: Id
+  , messageId          :: MessageId
   }
 
 type Version     = Int
-type Id          = Word16
+type MessageId   = Word16
 type Token       = BS.ByteString
 
 data Message = Message
