@@ -22,7 +22,7 @@ type MessagingState a = StateT MessageStore IO a
 createMessagingState :: MessageStore
 createMessagingState = ([], [])
 
-queueInboundMessage :: Message -> State MessageStore ()
+queueInboundMessage :: Message -> MessagingState ()
 queueInboundMessage message = do
   (inbound, outbound) <- get
   let newInbound = message:inbound
@@ -36,16 +36,16 @@ createRequest clientHost message method =
                , Req.requestPayload = messagePayload message
                , Req.requestOrigin  = clientHost }
 
-handleRequest :: SockAddr -> Message -> Req.Method -> MessageStore -> (Req.Request, MessageStore)
-handleRequest hostAddr message method store = do
-  let (_, newStore) = runState (queueInboundMessage message) store
-  (createRequest hostAddr message method, newStore)
+handleRequest :: SockAddr -> Message -> Req.Method -> MessagingState Req.Request
+handleRequest hostAddr message method = do
+  queueInboundMessage message
+  return (createRequest hostAddr message method)
 
-handleResponse :: Message -> Res.ResponseCode -> MessageStore -> IO MessageStore
-handleResponse _ _ store = return (store)
+handleResponse :: Message -> Res.ResponseCode -> MessagingState ()
+handleResponse _ _ = return ()
 
-handleEmpty :: Message -> MessageStore -> IO MessageStore
-handleEmpty _ store = return (store)
+handleEmpty :: Message -> MessagingState ()
+handleEmpty _ = return ()
 
 recvRequest :: Socket -> MessagingState Req.Request
 recvRequest sock = do
@@ -56,13 +56,13 @@ recvRequest sock = do
   let code    = messageCode header
   case code of
     Request method -> do
-      let (req, store) = handleRequest hostAddr message method store
-      return req
+      request <- handleRequest hostAddr message method
+      return request
     Response responseCode -> do
-      _ <- liftIO (handleResponse message responseCode store)
+      handleResponse message responseCode
       recvRequest sock
     Empty -> do
-      _ <- liftIO (handleEmpty message store)
+      handleEmpty message
       recvRequest sock
 
 sendResponse :: Socket -> Res.Response -> MessagingState ()
