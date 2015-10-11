@@ -1,6 +1,7 @@
 module Network.CoAP.Message
 ( Header (Header)
 , Message (Message)
+, MessageId
 , Type (CON, NON, ACK, RST)
 , decode
 , getMessage

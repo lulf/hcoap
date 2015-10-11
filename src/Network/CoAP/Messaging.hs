@@ -8,6 +8,7 @@ module Network.CoAP.Messaging
 ) where
 
 import Network.CoAP.Message
+import Data.List (deleteBy)
 import qualified Network.CoAP.Request as Req
 import qualified Network.CoAP.Response as Res
 import Control.Monad
@@ -16,7 +17,8 @@ import Network.Socket hiding (send, sendTo, recv, recvFrom)
 import qualified Network.Socket.ByteString as N
 
 -- A message store contains an inbound and outbound list of messages that needs to be ACKed
-type MessageStore = ([Message], [Message])
+type MessageList = [(MessageId, Message)]
+type MessageStore = (MessageList, MessageList)
 type MessagingState a = StateT MessageStore IO a
 
 createMessagingState :: MessageStore
@@ -25,9 +27,18 @@ createMessagingState = ([], [])
 queueInboundMessage :: Message -> MessagingState ()
 queueInboundMessage message = do
   (inbound, outbound) <- get
-  let newInbound = message:inbound
+  let newInbound = (messageId (messageHeader message), message):inbound
   put (newInbound, outbound)
   return ()
+
+takeInboundMessage :: MessageId -> MessagingState (Maybe Message)
+takeInboundMessage messageId = do
+  (inbound, outbound) <- get
+  let message = lookup messageId inbound
+  let newInbound = filter (\(id, _) -> id == messageId) inbound
+  put (newInbound, outbound)
+  return message
+
 
 createRequest :: SockAddr -> Message -> Req.Method -> Req.Request
 createRequest clientHost message method =
