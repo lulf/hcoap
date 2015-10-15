@@ -60,7 +60,7 @@ handleRequest hostAddr message method = do
   return (createRequest hostAddr message method)
 
 handleResponse :: Message -> Res.ResponseCode -> MessagingState ()
-handleResponse _ _ = return ()
+handleResponse _ _ = error "Unexpected message response"
 
 handleEmpty :: Message -> MessagingState ()
 handleEmpty message = do
@@ -71,12 +71,7 @@ handleEmpty message = do
   let (origMessage, newOutbound) = takeMessage mid outbound
 
   case mtype of
-    ACK -> do
-        if isJust origMessage
-          then do
-            put (inbound, newOutbound)
-            return ()
-          else return ()
+    ACK -> put (inbound, newOutbound)
     _ -> error "Unable to handle empty message type"
 
 recvRequest :: Socket -> MessagingState Req.Request
