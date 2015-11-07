@@ -52,7 +52,8 @@ createRequest clientHost message method =
    Req.Request { Req.requestMethod  = method
                , Req.requestOptions = messageOptions message
                , Req.requestPayload = messagePayload message
-               , Req.requestOrigin  = clientHost }
+               , Req.requestOrigin  = clientHost
+               , Req.requestId      = messageId (messageHeader message) }
 
 handleRequest :: SockAddr -> Message -> Req.Method -> MessagingState Req.Request
 handleRequest hostAddr message method = do
@@ -92,7 +93,14 @@ recvRequest sock = do
       recvRequest sock
 
 sendResponse :: Socket -> Res.Response -> MessagingState ()
-sendResponse sock response = return ()
+sendResponse sock response = do
+  let request = Res.request response
+  let origin = Req.requestOrigin request
+  let msgId = Req.requestId request
+  (Just msg) <- takeInboundMessage msgId
+  let encoded = encode msg
+  _ <- liftIO (N.sendTo sock encoded origin)
+  return ()
 
 sendRequest :: Socket -> MessageStore -> Req.Request -> IO Res.Response
-sendRequest _ _ _ = error "Not defined"
+sendRequest sock _ _ = error "Not defined"

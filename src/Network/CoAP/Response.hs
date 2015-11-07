@@ -2,6 +2,7 @@ module Network.CoAP.Response where
 
 import Network.CoAP.Options
 import Network.CoAP.Payload
+import Network.CoAP.Request
 import Network.Socket
 
 data ResponseCode = Created
@@ -27,7 +28,7 @@ data ResponseCode = Created
                   | ProxyingNotSupported
 
 data Response = Response
-  { responseCode    :: ResponseCode
-  , responseOptions :: [(Option, OptionValue)]
-  , responsePayload :: Payload
-  , responseOrigin   :: SockAddr }
+  { request          :: Request
+  , responseCode     :: ResponseCode
+  , responseOptions  :: [(Option, OptionValue)]
+  , responsePayload  :: Payload }
