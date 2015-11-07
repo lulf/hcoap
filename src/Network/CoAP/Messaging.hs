@@ -92,13 +92,22 @@ recvRequest sock = do
       handleEmpty message
       recvRequest sock
 
+responseHeader :: Header -> Res.Response -> Header
+responseHeader h _ = h
+
 sendResponse :: Socket -> Res.Response -> MessagingState ()
 sendResponse sock response = do
   let request = Res.request response
   let origin = Req.requestOrigin request
   let msgId = Req.requestId request
-  (Just msg) <- takeInboundMessage msgId
-  let encoded = encode msg
+  (Just origMsg) <- takeInboundMessage msgId
+  let outgoingMessage = Message { messageHeader  = responseHeader (messageHeader origMsg) response
+                                , messageToken   = Nothing -- What
+                                , messageOptions = Res.responseOptions response
+                                , messagePayload = Just (Res.responsePayload response) }
+
+
+  let encoded = encode outgoingMessage
   _ <- liftIO (N.sendTo sock encoded origin)
   return ()
 
