@@ -1,6 +1,7 @@
 module Network.CoAP
 ( module Network.CoAP.Request
 , module Network.CoAP.Response
+, runServer
 ) where
 
 import Network.CoAP.Request

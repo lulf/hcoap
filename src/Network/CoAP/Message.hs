@@ -19,6 +19,7 @@ module Network.CoAP.Message
 , messageOptions
 ) where
 
+import Debug.Trace
 import Network.CoAP.Options
 import Network.CoAP.Payload
 import Network.CoAP.Request hiding (Request)
@@ -39,8 +40,9 @@ type RequestMethod = Method
 data Code = Request RequestMethod
           | Response ResponseCode
           | Empty
+          deriving (Show)
 
-data Type = CON | NON | ACK | RST
+data Type = CON | NON | ACK | RST deriving (Show)
 
 data Header = Header
   { messageVersion     :: Version
@@ -110,26 +112,36 @@ getHeader = do
   code <- getCode clazz detail
 
   id <- getWord16be
-  return ((Header version msgType code (fromIntegral id)), tokenLength)
+  return (trace ("TKL: " ++ (show tokenLength) ++ ", clazz: " ++ (show clazz) ++ ", detail: " ++ (show detail) ++ ", code: " ++ (show code) ++ ", id: " ++ (show id)) ((Header version msgType code (fromIntegral id)), tokenLength))
 
 getToken :: Word8 -> Get (Maybe Token)
 getToken 0 = return (Nothing)
 getToken n = do
   str <- getByteString (fromIntegral n)
-  return (Just str)
+  return (trace ("Token length: " ++ (show str)) (Just str))
 
-getOption :: Get (Option, OptionValue)
-getOption = fail "No supported options"
+getOptionValue :: Int -> Get OptionValue
+getOptionValue len = fail "No option value supported"
+
+getOption :: Get (Maybe (Option, OptionValue))
+getOption = do
+  tmp <- trace "Reading byte" getWord8
+  if tmp == 0xFF
+  then return Nothing
+  else do
+    let delta  = fromIntegral ((.&.) (shiftR tmp 4) 0x0F)
+    let valueLength = trace ("Value of tmp is " ++ (show tmp)) (fromIntegral ((.&.) tmp 0x0F))
+    value <- getByteString valueLength
+    return (Just (ContentFormat, value))
 
 getOptions :: Get ([(Option, OptionValue)])
 getOptions = do
-  marker <- getWord8
-  if marker == 0xFF
-     then return ([])
-     else do
-       opt <- getOption
-       opts <- getOptions
-       return (opt:opts)
+  opt <- getOption
+  case opt of
+    Nothing -> return []
+    Just o  -> do
+      opts <- getOptions
+      return (o:opts)
 
 getPayload :: Get (Maybe Payload)
 getPayload = do
@@ -146,9 +158,9 @@ getMessage = do
   options <- getOptions
   payload <- getPayload
   return (Message { messageHeader  = header
-             , messageToken   = token
-             , messageOptions = options
-             , messagePayload = payload })
+                  , messageToken   = token
+                  , messageOptions = options
+                  , messagePayload = payload })
 
 decode :: BS.ByteString -> Message
 decode msg = runGet getMessage (fromStrict msg)

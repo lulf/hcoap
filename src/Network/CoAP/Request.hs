@@ -6,11 +6,11 @@ import Network.Socket
 import Data.Word
 
 type RequestId = Word16
-data Method = GET | POST | PUT | DELETE
+data Method = GET | POST | PUT | DELETE deriving (Show)
 
 data Request = Request
   { requestId      :: RequestId
   , requestMethod  :: Method
   , requestOptions :: [(Option, OptionValue)]
   , requestPayload :: Maybe Payload
-  , requestOrigin  :: SockAddr }
+  , requestOrigin  :: SockAddr } deriving (Show)

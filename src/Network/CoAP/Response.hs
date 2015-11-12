@@ -26,9 +26,10 @@ data ResponseCode = Created
                   | ServiceUnavailable
                   | GatewayTimeout
                   | ProxyingNotSupported
+                  deriving (Show)
 
 data Response = Response
   { request          :: Request
   , responseCode     :: ResponseCode
   , responseOptions  :: [(Option, OptionValue)]
-  , responsePayload  :: Payload }
+  , responsePayload  :: Payload } deriving (Show)

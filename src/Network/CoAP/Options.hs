@@ -17,5 +17,6 @@ data Option = ContentFormat
             | IfMatch
             | IfNoneMatch
             | Size1
+            deriving (Show)
 
 type OptionValue = ByteString
