@@ -2,7 +2,13 @@ import Network.CoAP
 import Network.Socket
 
 requestHandler :: Request -> IO Response
-requestHandler req = error "Not implemented!"
+requestHandler req = do
+  let response = Response { request = req
+                          , responseCode = Created
+                          , responseOptions = []
+                          , responsePayload = Nothing }
+  return response
+              
 
 main :: IO ()
 main = do

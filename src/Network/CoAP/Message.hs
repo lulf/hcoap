@@ -120,25 +120,34 @@ getToken n = do
   str <- getByteString (fromIntegral n)
   return (trace ("Token length: " ++ (show str)) (Just str))
 
-getOptionValue :: Int -> Get OptionValue
-getOptionValue len = fail "No option value supported"
-
 getOption :: Get (Maybe (Option, OptionValue))
 getOption = do
-  tmp <- trace "Reading byte" getWord8
-  if tmp == 0xFF
+  e <- isEmpty
+  if e
   then return Nothing
   else do
-    let delta  = fromIntegral ((.&.) (shiftR tmp 4) 0x0F)
-    let valueLength = trace ("Value of tmp is " ++ (show tmp)) (fromIntegral ((.&.) tmp 0x0F))
-    value <- getByteString valueLength
-    return (Just (ContentFormat, value))
+    tmp <- getWord8
+    if tmp == 0xFF
+    then return Nothing
+    else do
+      let delta  = fromIntegral ((.&.) (shiftR tmp 4) 0x0F)
+      let valueLength = fromIntegral ((.&.) tmp 0x0F)
+      rem <- remaining
+      let v = trace ("Got delta " ++ (show delta) ++ ", and len " ++ (show valueLength) ++ " remaining " ++ (show rem)) delta
+      if v == 0
+      then do
+        value <- getByteString valueLength
+        return (Just (ContentFormat, trace ("Value is " ++ (show value)) value))
+      else do
+        value <- getByteString valueLength
+        return (Just (ContentFormat, trace ("Value is " ++ (show value)) value))
 
 getOptions :: Get ([(Option, OptionValue)])
 getOptions = do
   opt <- getOption
   case opt of
-    Nothing -> return []
+    Nothing -> do
+      return []
     Just o  -> do
       opts <- getOptions
       return (o:opts)

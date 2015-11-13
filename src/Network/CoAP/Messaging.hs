@@ -104,7 +104,7 @@ sendResponse sock response = do
   let outgoingMessage = Message { messageHeader  = responseHeader (messageHeader origMsg) response
                                 , messageToken   = Nothing -- What
                                 , messageOptions = Res.responseOptions response
-                                , messagePayload = Just (Res.responsePayload response) }
+                                , messagePayload = Res.responsePayload response }
 
 
   let encoded = encode outgoingMessage

@@ -32,4 +32,4 @@ data Response = Response
   { request          :: Request
   , responseCode     :: ResponseCode
   , responseOptions  :: [(Option, OptionValue)]
-  , responsePayload  :: Payload } deriving (Show)
+  , responsePayload  :: Maybe Payload } deriving (Show)
