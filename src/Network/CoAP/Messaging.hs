@@ -8,6 +8,7 @@ module Network.CoAP.Messaging
 ) where
 
 import Network.CoAP.Message
+import Network.CoAP.Endpoint
 import Data.List (deleteBy)
 import qualified Network.CoAP.Request as Req
 import qualified Network.CoAP.Response as Res
@@ -47,7 +48,7 @@ takeInboundMessage messageId = do
   return message
 
 
-createRequest :: SockAddr -> Message -> Req.Method -> Req.Request
+createRequest :: Endpoint -> Message -> Req.Method -> Req.Request
 createRequest clientHost message method =
    Req.Request { Req.requestMethod  = method
                , Req.requestOptions = messageOptions message
@@ -55,10 +56,10 @@ createRequest clientHost message method =
                , Req.requestOrigin  = clientHost
                , Req.requestId      = messageId (messageHeader message) }
 
-handleRequest :: SockAddr -> Message -> Req.Method -> MessagingState Req.Request
-handleRequest hostAddr message method = do
+handleRequest :: Endpoint -> Message -> Req.Method -> MessagingState Req.Request
+handleRequest endpoint message method = do
   queueInboundMessage message
-  return (createRequest hostAddr message method)
+  return (createRequest endpoint message method)
 
 handleResponse :: Message -> Res.ResponseCode -> MessagingState ()
 handleResponse _ _ = error "Unexpected message response"
@@ -77,13 +78,13 @@ handleEmpty message = do
 
 recvRequest :: Socket -> MessagingState Req.Request
 recvRequest sock = do
-  (msgData, hostAddr) <- liftIO (N.recvFrom sock 65535)
+  (msgData, endpoint) <- liftIO (N.recvFrom sock 65535)
   let message = decode msgData
   let header  = messageHeader message
   let code    = messageCode header
   case code of
     Request method -> do
-      request <- handleRequest hostAddr message method
+      request <- handleRequest endpoint message method
       return request
     Response responseCode -> do
       handleResponse message responseCode
