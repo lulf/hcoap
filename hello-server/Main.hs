@@ -4,7 +4,7 @@ import Network.Socket
 requestHandler :: Request -> IO Response
 requestHandler req = do
   let response = Response { request = req
-                          , responseCode = Created
+                          , responseCode = NotFound
                           , responseOptions = []
                           , responsePayload = Nothing }
   return response
