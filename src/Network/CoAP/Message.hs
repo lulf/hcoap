@@ -120,8 +120,8 @@ getToken n = do
   str <- getByteString (fromIntegral n)
   return (trace ("Token length: " ++ (show str)) (Just str))
 
-getOption :: Get (Maybe (Option, OptionValue))
-getOption = do
+getOption :: Int -> Get (Maybe (Option, OptionValue))
+getOption lastCode = do
   e <- isEmpty
   if e
   then return Nothing
@@ -133,7 +133,8 @@ getOption = do
       let delta  = fromIntegral ((.&.) (shiftR tmp 4) 0x0F)
       let valueLength = fromIntegral ((.&.) tmp 0x0F)
       rem <- remaining
-      let v = trace ("Got delta " ++ (show delta) ++ ", and len " ++ (show valueLength) ++ " remaining " ++ (show rem)) delta
+      let optCode = lastCode + delta
+      let v = trace ("Got option code " ++ (show optCode) ++ ", and len " ++ (show valueLength) ++ " remaining " ++ (show rem)) delta
       if v == 0
       then do
         value <- getByteString valueLength
@@ -142,15 +143,18 @@ getOption = do
         value <- getByteString valueLength
         return (Just (ContentFormat, trace ("Value is " ++ (show value)) value))
 
-getOptions :: Get ([(Option, OptionValue)])
-getOptions = do
-  opt <- getOption
+getOptionsLoop :: Int -> Get ([(Option, OptionValue)])
+getOptionsLoop lastCode = do
+  opt <- getOption lastCode
   case opt of
     Nothing -> do
       return []
     Just o  -> do
-      opts <- getOptions
+      opts <- getOptionsLoop (encodeOption (fst o))
       return (o:opts)
+
+getOptions :: Get ([(Option, OptionValue)])
+getOptions = getOptionsLoop 0
 
 getPayload :: Get (Maybe Payload)
 getPayload = do
