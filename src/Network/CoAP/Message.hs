@@ -28,6 +28,7 @@ import Data.ByteString.Lazy
 import qualified Data.ByteString as BS
 import Data.Word
 import Data.Maybe
+import Data.List (sortOn)
 import Data.Binary hiding (encode, decode)
 import Data.Binary.Get
 import Data.Binary.Put
@@ -144,38 +145,21 @@ getOption lastCode = do
         return (Just (ContentFormat, trace ("Value is " ++ (show value)) value))
 
 decodeOption :: Int -> Option
-decodeOption 0  = ContentFormat
-decodeOption 1  = ETag
-decodeOption 2  = LocationPath
-decodeOption 3  = LocationQuery
-decodeOption 4  = MaxAge
-decodeOption 5  = ProxyUri
-decodeOption 6  = ProxyScheme
-decodeOption 7  = UriHost
-decodeOption 8  = UriPath
-decodeOption 9  = UriPort
-decodeOption 10 = UriQuery
-decodeOption 11 = Accept
-decodeOption 12 = IfMatch
-decodeOption 13 = IfNoneMatch
-decodeOption 14 = Size1
-
-encodeOption :: Option -> Int
-encodeOption ContentFormat = 0
-encodeOption ETag          = 1
-encodeOption LocationPath  = 2
-encodeOption LocationQuery = 3
-encodeOption MaxAge        = 4
-encodeOption ProxyUri      = 5
-encodeOption ProxyScheme   = 6
-encodeOption UriHost       = 7
-encodeOption UriPath       = 8
-encodeOption UriPort       = 9
-encodeOption UriQuery      = 10
-encodeOption Accept        = 11
-encodeOption IfMatch       = 12
-encodeOption IfNoneMatch   = 13
-encodeOption Size1         = 14
+decodeOption 1  = IfMatch
+decodeOption 3  = UriHost
+decodeOption 4  = ETag
+decodeOption 5  = IfNoneMatch
+decodeOption 7  = UriPort
+decodeOption 8  = LocationPath
+decodeOption 11 = UriPath
+decodeOption 12 = ContentFormat
+decodeOption 14 = MaxAge
+decodeOption 15 = UriQuery
+decodeOption 17 = Accept
+decodeOption 20 = LocationQuery
+decodeOption 35 = ProxyUri
+decodeOption 39 = ProxyScheme
+decodeOption 60 = Size1
 
 getOptionsLoop :: Int -> Get ([(Option, OptionValue)])
 getOptionsLoop lastCode = do
@@ -269,8 +253,64 @@ putToken :: Maybe Token -> Put
 putToken Nothing = return ()
 putToken (Just token) = putByteString token
 
+encodeOption :: Option -> Int
+encodeOption IfMatch       = 1
+encodeOption UriHost       = 3
+encodeOption ETag          = 4
+encodeOption IfNoneMatch   = 5
+encodeOption UriPort       = 7
+encodeOption LocationPath  = 8
+encodeOption UriPath       = 11
+encodeOption ContentFormat = 12
+encodeOption MaxAge        = 14
+encodeOption UriQuery      = 15
+encodeOption Accept        = 17
+encodeOption LocationQuery = 20
+encodeOption ProxyUri      = 35
+encodeOption ProxyScheme   = 39
+encodeOption Size1         = 60
+
+encodeOptionPart :: Int -> Word8
+encodeOptionPart value =
+  if value > 268
+  then 14
+  else if value > 12
+       then 13
+       else fromIntegral value
+
+putOptionPart :: Word8 -> Int -> Put
+putOptionPart valueLen value = do
+  if valueLen == 13
+  then putWord8 (fromIntegral (value - 13))
+  else if valueLen == 14
+       then putWord16be (fromIntegral (value - 269))
+       else return ()
+
+putOption :: Int -> OptionValue -> Put
+putOption nextDelta optValue = do
+  let optValueLen = BS.length optValue
+  let valueLen = encodeOptionPart optValueLen
+  let deltaValue = encodeOptionPart nextDelta
+  let tmp = (.|.) (shiftL deltaValue 4) ((.&.) valueLen 0x0F)
+
+  putWord8 tmp
+  putOptionPart deltaValue nextDelta
+  putOptionPart valueLen optValueLen
+  putByteString optValue
+
+putOptionsLoop :: Int -> [(Option, OptionValue)] -> Put
+putOptionsLoop lastNumber [] = return ()
+putOptionsLoop lastNumber (opt:options) = do
+  let optNumber = encodeOption (fst opt)
+  let nextDelta = optNumber - lastNumber
+  let optValue = snd opt
+  putOption nextDelta optValue
+  putOptionsLoop optNumber options
+
 putOptions :: [(Option, OptionValue)] -> Put
-putOptions options = return ()
+putOptions options = do
+  let sortedOptions = sortOn (\(opt, _) -> encodeOption opt) options
+  putOptionsLoop 0 sortedOptions
 
 putPayload :: Maybe Payload -> Put
 putPayload Nothing = return ()
