@@ -8,6 +8,7 @@ module Network.CoAP.Messaging
 ) where
 
 import Network.CoAP.Message
+import Network.CoAP.MessageCodec
 import Data.List (deleteBy)
 import qualified Network.CoAP.Request as Req
 import qualified Network.CoAP.Response as Res
