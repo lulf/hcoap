@@ -1,12 +1,13 @@
 import Network.CoAP
 import Network.Socket
+import Data.ByteString.Char8
 
 requestHandler :: Request -> IO Response
 requestHandler req = do
   let response = Response { request = req
-                          , responseCode = NotFound
-                          , responseOptions = []
-                          , responsePayload = Nothing }
+                          , responseCode = Content
+                          , responseOptions = [(ContentFormat, pack "application/json")]
+                          , responsePayload = Just (pack "{\"foo\":42}") }
   return response
               
 
