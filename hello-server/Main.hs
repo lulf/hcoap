@@ -1,13 +1,15 @@
 import Network.CoAP
 import Network.Socket
-import Data.ByteString.Char8
+import qualified Data.ByteString.Char8 as B
+import qualified Data.ByteString.Lazy.Char8 as L
+import Data.Binary
 
 requestHandler :: Request -> IO Response
 requestHandler req = do
   let response = Response { request = req
                           , responseCode = Content
-                          , responseOptions = [(ContentFormat, pack "application/json")]
-                          , responsePayload = Just (pack "{\"foo\":42}") }
+                          , responseOptions = [(ContentFormat, B.pack (L.unpack (encode (50 :: Word8))))]
+                          , responsePayload = Just (B.pack "{\"foo\":42}") }
   return response
               
 
