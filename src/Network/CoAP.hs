@@ -1,6 +1,7 @@
 module Network.CoAP
 ( module Network.CoAP.Request
 , module Network.CoAP.Response
+, module Network.CoAP.Options
 , runServer
 ) where
 
@@ -8,6 +9,7 @@ import Network.CoAP.Request
 import Network.CoAP.Response
 import Network.CoAP.Message
 import Network.CoAP.Messaging
+import Network.CoAP.Options
 import Control.Monad.State
 import Network.Socket
 
