@@ -190,13 +190,35 @@ encodeRequestMethod POST   = 2
 encodeRequestMethod PUT    = 3
 encodeRequestMethod DELETE = 4
 
-encodeResponseCode :: ResponseCode -> Word8
-encodeResponseCode _ = 0
+encodeResponseCode :: ResponseCode -> (Word8, Word8)
+encodeResponseCode Created               = (2, 1)
+encodeResponseCode Deleted               = (2, 2)
+encodeResponseCode Valid                 = (2, 3)
+encodeResponseCode Changed               = (2, 4)
+encodeResponseCode Content               = (2, 5)
+encodeResponseCode BadRequest            = (4, 0)
+encodeResponseCode Unauthorized          = (4, 1)
+encodeResponseCode BadOption             = (4, 2)
+encodeResponseCode Forbidden             = (4, 3)
+encodeResponseCode NotFound              = (4, 4)
+encodeResponseCode MethodNotAllowed      = (4, 5)
+encodeResponseCode NotAcceptable         = (4, 6)
+encodeResponseCode PreconditionFailed    = (4, 12)
+encodeResponseCode RequestEntityTooLarge = (4, 13)
+encodeResponseCode UnsupportedFormat     = (4, 15)
+encodeResponseCode InternalServerError   = (5, 0)
+encodeResponseCode NotImplemented        = (5, 1)
+encodeResponseCode BadGateway            = (5, 2)
+encodeResponseCode ServiceUnavailable    = (5, 3)
+encodeResponseCode GatewayTimeout        = (5, 4)
+encodeResponseCode ProxyingNotSupported  = (5, 5)
 
 encodeCode :: Code -> Word8
 encodeCode Empty = 0
 encodeCode (Request detail) = encodeRequestMethod detail
-encodeCode (Response detail) = (.|.) (shiftL 2 5) (encodeResponseCode detail)
+encodeCode (Response detail) =
+  let (responseClass, responseDetail) = encodeResponseCode detail
+   in (.|.) (shiftL responseClass 5) responseDetail
 
 putHeader :: Header -> Word8 -> Put
 putHeader header tokenLength = do
