@@ -92,8 +92,18 @@ recvRequest sock = do
       handleEmpty message
       recvRequest sock
 
+responseType :: Type -> Type
+responseType CON = ACK
+responseType NON = NON
+responseType _   = error "Unexpected request code type"
+
 responseHeader :: Header -> Res.Response -> Header
-responseHeader h _ = h
+responseHeader origHeader response =
+  Header { messageVersion = messageVersion origHeader 
+         , messageType = responseType (messageType origHeader)
+         , messageCode = Response (Res.responseCode response)
+         , messageId = messageId origHeader }
+    
 
 sendResponse :: Socket -> Res.Response -> MessagingState ()
 sendResponse sock response = do
