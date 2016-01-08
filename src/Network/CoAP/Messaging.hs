@@ -112,7 +112,7 @@ sendResponse sock response = do
   let msgId = Req.requestId request
   (Just origMsg) <- takeInboundMessage msgId
   let outgoingMessage = Message { messageHeader  = responseHeader (messageHeader origMsg) response
-                                , messageToken   = Nothing -- What
+                                , messageToken   = messageToken origMsg
                                 , messageOptions = Res.responseOptions response
                                 , messagePayload = Res.responsePayload response }
 
