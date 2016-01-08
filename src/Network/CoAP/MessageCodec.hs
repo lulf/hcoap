@@ -97,6 +97,18 @@ decodeOption 35 = ProxyUri
 decodeOption 39 = ProxyScheme
 decodeOption 60 = Size1
 
+getOptionPart :: Int -> Get (Int)
+getOptionPart part = do
+  if part == 14
+  then do
+    v <- getWord16be
+    return ((fromIntegral v) + 269)
+  else if part == 13
+       then do
+         v <- getWord8
+         return ((fromIntegral v) + 13)
+       else return part
+
 getOption :: Int -> Get (Maybe (Option, OptionValue))
 getOption lastCode = do
   e <- isEmpty
@@ -109,8 +121,12 @@ getOption lastCode = do
     else do
       let delta  = fromIntegral ((.&.) (shiftR tmp 4) 0x0F)
       let valueLength = fromIntegral ((.&.) tmp 0x0F)
-      let optCode = lastCode + delta
-      value <- getByteString valueLength
+      fullDelta <- getOptionPart delta
+      let optCode = lastCode + fullDelta
+
+      fullLength <- getOptionPart valueLength
+      value <- getByteString fullLength
+
       return (Just ((decodeOption optCode), value))
 
 getOptionsLoop :: Int -> Get ([(Option, OptionValue)])
