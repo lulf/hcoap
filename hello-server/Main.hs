@@ -8,7 +8,7 @@ requestHandler :: Request -> IO Response
 requestHandler req = do
   let response = Response { request = req
                           , responseCode = Content
-                          , responseOptions = [(ContentFormat, B.pack (L.unpack (encode (50 :: Word8))))]
+                          , responseOptions = [ContentFormat ApplicationJson]
                           , responsePayload = Just (B.pack "{\"foo\":42}") }
   return response
               

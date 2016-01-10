@@ -52,6 +52,6 @@ type Token       = BS.ByteString
 data Message = Message
   { messageHeader  :: Header
   , messageToken   :: Maybe Token
-  , messageOptions :: [(Option, OptionValue)]
+  , messageOptions :: [Option]
   , messagePayload :: Maybe Payload
   }

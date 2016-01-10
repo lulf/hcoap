@@ -15,6 +15,7 @@ import Data.Word
 import Data.Maybe
 import Data.List (sortOn)
 import Data.Binary hiding (encode, decode)
+import qualified Data.Binary as DB
 import Data.Binary.Get
 import Data.Binary.Put
 import Data.Bits
@@ -80,22 +81,52 @@ getToken n = do
   --return (trace ("Token length: " ++ (show str)) (Just str))
   return (Just str)
 
-decodeOption :: Int -> Option
-decodeOption 1  = IfMatch
-decodeOption 3  = UriHost
-decodeOption 4  = ETag
-decodeOption 5  = IfNoneMatch
-decodeOption 7  = UriPort
-decodeOption 8  = LocationPath
-decodeOption 11 = UriPath
-decodeOption 12 = ContentFormat
-decodeOption 14 = MaxAge
-decodeOption 15 = UriQuery
-decodeOption 17 = Accept
-decodeOption 20 = LocationQuery
-decodeOption 35 = ProxyUri
-decodeOption 39 = ProxyScheme
-decodeOption 60 = Size1
+intToMediaType 0  = TextPlain
+intToMediaType 40 = ApplicationLinkFormat
+intToMediaType 41 = ApplicationXml
+intToMediaType 42 = ApplicationOctetStream
+intToMediaType 47 = ApplicationExi
+intToMediaType 50 = ApplicationJson
+
+decodeOption :: Int -> BS.ByteString -> Int -> Option
+decodeOption 1 value _ = IfMatch value
+decodeOption 3 value _ = UriHost value
+decodeOption 4 value _ = ETag value
+decodeOption 5 _ _ = IfNoneMatch
+decodeOption 7 value valueLen = UriPort (decodeOptionInt value valueLen)
+decodeOption 8 value _ = LocationPath value
+decodeOption 11 value _ = UriPath value
+decodeOption 12 value valueLen = ContentFormat (intToMediaType (decodeOptionInt value valueLen))
+decodeOption 14 value valueLen = MaxAge (decodeOptionInt value valueLen)
+decodeOption 15 value _ = UriQuery value
+decodeOption 17 value valueLen = Accept (decodeOptionInt value valueLen)
+decodeOption 20 value _ = LocationQuery value
+decodeOption 35 value _ = ProxyUri value
+decodeOption 39 value _ = ProxyScheme value
+decodeOption 60 value valueLen = Size1 (decodeOptionInt value valueLen)
+
+getOptionInt :: Int -> Get Int
+getOptionInt valueLen = do
+  if valueLen < 256
+  then do
+    v <- getWord8
+    return (fromIntegral v)
+  else if valueLen < 65536
+       then do
+         v <- getWord16be
+         return (fromIntegral v)
+       else if valueLen < 16777216
+            then do
+              a <- getWord8
+              b <- getWord8
+              c <- getWord8
+              return ((.|.) ((.|.) (shiftL (fromIntegral a :: Int) 16) (shiftL (fromIntegral b :: Int) 8)) (fromIntegral c :: Int))
+            else do
+              v <- getWord32be
+              return (fromIntegral v)
+
+decodeOptionInt :: BS.ByteString -> Int -> Int
+decodeOptionInt value valueLen = runGet (getOptionInt valueLen) (fromStrict value)
 
 getOptionPart :: Int -> Get (Int)
 getOptionPart part = do
@@ -109,7 +140,7 @@ getOptionPart part = do
          return ((fromIntegral v) + 13)
        else return part
 
-getOption :: Int -> Get (Maybe (Option, OptionValue))
+getOption :: Int -> Get (Maybe Option)
 getOption lastCode = do
   e <- isEmpty
   if e
@@ -126,20 +157,22 @@ getOption lastCode = do
 
       fullLength <- getOptionPart valueLength
       value <- getByteString fullLength
+      let option = decodeOption optCode value fullLength
 
-      return (Just ((decodeOption optCode), value))
+      return (Just option)
 
-getOptionsLoop :: Int -> Get ([(Option, OptionValue)])
+getOptionsLoop :: Int -> Get ([Option])
 getOptionsLoop lastCode = do
   opt <- getOption lastCode
   case opt of
     Nothing -> do
       return []
     Just o  -> do
-      opts <- getOptionsLoop (encodeOption (fst o))
+      let optCode = fst (encodeOption o)
+      opts <- getOptionsLoop optCode
       return (o:opts)
 
-getOptions :: Get ([(Option, OptionValue)])
+getOptions :: Get ([Option])
 getOptions = getOptionsLoop 0
 
 getPayload :: Get (Maybe Payload)
@@ -221,22 +254,42 @@ putToken :: Maybe Token -> Put
 putToken Nothing = return ()
 putToken (Just token) = putByteString token
 
-encodeOption :: Option -> Int
-encodeOption IfMatch       = 1
-encodeOption UriHost       = 3
-encodeOption ETag          = 4
-encodeOption IfNoneMatch   = 5
-encodeOption UriPort       = 7
-encodeOption LocationPath  = 8
-encodeOption UriPath       = 11
-encodeOption ContentFormat = 12
-encodeOption MaxAge        = 14
-encodeOption UriQuery      = 15
-encodeOption Accept        = 17
-encodeOption LocationQuery = 20
-encodeOption ProxyUri      = 35
-encodeOption ProxyScheme   = 39
-encodeOption Size1         = 60
+putOptionInt :: Int -> Put
+putOptionInt 0 = return ()
+putOptionInt n = do
+  if n < 256
+  then putWord8 (fromIntegral n)
+  else if n < 65536
+       then putWord16be (fromIntegral n)
+       else putWord32be (fromIntegral n)
+
+encodeOptionInt :: Int -> BS.ByteString
+encodeOptionInt n = BS.pack (unpack (runPut (putOptionInt n)))
+
+mediaTypeToInt :: MediaType -> Int
+mediaTypeToInt TextPlain              = 0
+mediaTypeToInt ApplicationLinkFormat  = 40
+mediaTypeToInt ApplicationXml         = 41
+mediaTypeToInt ApplicationOctetStream = 42
+mediaTypeToInt ApplicationExi         = 47
+mediaTypeToInt ApplicationJson        = 50
+
+encodeOption :: Option -> (Int, BS.ByteString)
+encodeOption (IfMatch value)            = (1, value)
+encodeOption (UriHost value)            = (3, value)
+encodeOption (ETag value)               = (4, value)
+encodeOption IfNoneMatch                = (5, BS.empty)
+encodeOption (UriPort value)            = (7, encodeOptionInt value)
+encodeOption (LocationPath value)       = (8, value)
+encodeOption (UriPath value)            = (11, value)
+encodeOption (ContentFormat mediaType)  = (12, encodeOptionInt (mediaTypeToInt mediaType))
+encodeOption (MaxAge value)             = (14, encodeOptionInt value)
+encodeOption (UriQuery value)           = (15, value)
+encodeOption (Accept value)             = (17, encodeOptionInt value)
+encodeOption (LocationQuery value)      = (20, value)
+encodeOption (ProxyUri value)           = (35, value)
+encodeOption (ProxyScheme value)        = (39, value)
+encodeOption (Size1 value)              = (60, encodeOptionInt value)
 
 encodeOptionPart :: Int -> Word8
 encodeOptionPart value =
@@ -254,7 +307,7 @@ putOptionPart valueLen value = do
        then putWord16be (fromIntegral (value - 269))
        else return ()
 
-putOption :: Int -> OptionValue -> Put
+putOption :: Int -> BS.ByteString -> Put
 putOption nextDelta optValue = do
   let optValueLen = BS.length optValue
   let valueLen = encodeOptionPart optValueLen
@@ -266,18 +319,17 @@ putOption nextDelta optValue = do
   putOptionPart valueLen optValueLen
   putByteString optValue
 
-putOptionsLoop :: Int -> [(Option, OptionValue)] -> Put
+putOptionsLoop :: Int -> [Option] -> Put
 putOptionsLoop lastNumber [] = return ()
 putOptionsLoop lastNumber (opt:options) = do
-  let optNumber = encodeOption (fst opt)
+  let (optNumber, optValue) = encodeOption opt
   let nextDelta = optNumber - lastNumber
-  let optValue = snd opt
   putOption nextDelta optValue
   putOptionsLoop optNumber options
 
-putOptions :: [(Option, OptionValue)] -> Put
+putOptions :: [Option] -> Put
 putOptions options = do
-  let sortedOptions = sortOn (\(opt, _) -> encodeOption opt) options
+  let sortedOptions = sortOn (\o -> fst (encodeOption o)) options
   putOptionsLoop 0 sortedOptions
 
 putPayload :: Maybe Payload -> Put
