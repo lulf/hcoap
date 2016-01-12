@@ -17,7 +17,7 @@ cabal-version:       >=1.10
 
 library
   exposed-modules: Network.CoAP
-  other-modules:   Network.CoAP.Message, Network.CoAP.Messaging, Network.CoAP.Request, Network.CoAP.Response, Network.CoAP.Options, Network.CoAP.Payload
+  other-modules:   Network.CoAP.Message, Network.CoAP.MessageCodec, Network.CoAP.Messaging, Network.CoAP.Request, Network.CoAP.Response, Network.CoAP.Options, Network.CoAP.Payload
   -- other-extensions:
   build-depends:       base,
                        bytestring,
@@ -33,5 +33,7 @@ executable hcoap-hello-server
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base,
                        network,
+                       bytestring,
+                       binary,
                        hcoap
   default-language:    Haskell2010

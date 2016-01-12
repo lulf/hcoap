@@ -31,5 +31,5 @@ data ResponseCode = Created
 data Response = Response
   { request          :: Request
   , responseCode     :: ResponseCode
-  , responseOptions  :: [(Option, OptionValue)]
+  , responseOptions  :: [Option]
   , responsePayload  :: Maybe Payload } deriving (Show)

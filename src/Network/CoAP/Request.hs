@@ -11,6 +11,6 @@ data Method = GET | POST | PUT | DELETE deriving (Show)
 data Request = Request
   { requestId      :: RequestId
   , requestMethod  :: Method
-  , requestOptions :: [(Option, OptionValue)]
+  , requestOptions :: [Option]
   , requestPayload :: Maybe Payload
   , requestOrigin  :: SockAddr } deriving (Show)

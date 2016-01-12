@@ -9,6 +9,7 @@ module Network.CoAP.Messaging
 
 import Network.CoAP.Message
 import Network.CoAP.Endpoint
+import Network.CoAP.MessageCodec
 import Data.List (deleteBy)
 import qualified Network.CoAP.Request as Req
 import qualified Network.CoAP.Response as Res
@@ -93,8 +94,18 @@ recvRequest sock = do
       handleEmpty message
       recvRequest sock
 
+responseType :: Type -> Type
+responseType CON = ACK
+responseType NON = NON
+responseType _   = error "Unexpected request code type"
+
 responseHeader :: Header -> Res.Response -> Header
-responseHeader h _ = h
+responseHeader origHeader response =
+  Header { messageVersion = messageVersion origHeader 
+         , messageType = responseType (messageType origHeader)
+         , messageCode = Response (Res.responseCode response)
+         , messageId = messageId origHeader }
+    
 
 sendResponse :: Socket -> Res.Response -> MessagingState ()
 sendResponse sock response = do
@@ -103,7 +114,7 @@ sendResponse sock response = do
   let msgId = Req.requestId request
   (Just origMsg) <- takeInboundMessage msgId
   let outgoingMessage = Message { messageHeader  = responseHeader (messageHeader origMsg) response
-                                , messageToken   = Nothing -- What
+                                , messageToken   = messageToken origMsg
                                 , messageOptions = Res.responseOptions response
                                 , messagePayload = Res.responsePayload response }
 
