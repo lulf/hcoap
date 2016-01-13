@@ -1,8 +1,6 @@
 import Network.CoAP
 import Network.Socket
 import qualified Data.ByteString.Char8 as B
-import qualified Data.ByteString.Lazy.Char8 as L
-import Data.Binary
 
 findPath :: [Option] -> B.ByteString
 findPath [] = B.empty
