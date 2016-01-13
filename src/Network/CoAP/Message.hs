@@ -43,7 +43,7 @@ data Header = Header
   , messageType        :: Type
   , messageCode        :: Code
   , messageId          :: MessageId
-  }
+  } deriving (Show)
 
 type Version     = Int
 type MessageId   = Word16
@@ -54,4 +54,4 @@ data Message = Message
   , messageToken   :: Maybe Token
   , messageOptions :: [Option]
   , messagePayload :: Maybe Payload
-  }
+  } deriving (Show)
