@@ -7,8 +7,8 @@ import Debug.Trace
 import Network.CoAP.Options
 import Network.CoAP.Payload
 import Network.CoAP.Message
-import Network.CoAP.Request hiding (Request)
-import Network.CoAP.Response hiding (Response)
+import Network.CoAP.Request
+import Network.CoAP.Response
 import Data.ByteString.Lazy
 import qualified Data.ByteString as BS
 import Data.Word
@@ -28,7 +28,7 @@ getType 2 = return (ACK)
 getType 3 = return (RST)
 getType _ = fail "Unknown type"
 
-getRequestMethod :: Word8 -> Get RequestMethod
+getRequestMethod :: Word8 -> Get Method
 getRequestMethod 1 = return (GET)
 getRequestMethod 2 = return (POST)
 getRequestMethod 3 = return (PUT)
@@ -39,16 +39,16 @@ getResponseCode :: Word8 -> Get ResponseCode
 getResponseCode _ = return (Created)
 
 getCode :: Word8 -> Word8 -> Get Code
-getCode 0 0 = return (Empty)
+getCode 0 0 = return (CodeEmpty)
 getCode 0 detail = do
   method <- getRequestMethod detail
-  return (Request method)
+  return (CodeRequest method)
 
 getCode code detail =
   if code == 2 || code == 4 || code == 5
      then do
        responseCode <- getResponseCode detail
-       return (Response responseCode)
+       return (CodeResponse responseCode)
      else fail "Unknown class"
 
 
@@ -203,7 +203,7 @@ encodeType NON = 1
 encodeType ACK = 2
 encodeType RST = 3
 
-encodeRequestMethod :: RequestMethod -> Word8
+encodeRequestMethod :: Method -> Word8
 encodeRequestMethod GET    = 1
 encodeRequestMethod POST   = 2
 encodeRequestMethod PUT    = 3
@@ -233,9 +233,9 @@ encodeResponseCode GatewayTimeout        = (5, 4)
 encodeResponseCode ProxyingNotSupported  = (5, 5)
 
 encodeCode :: Code -> Word8
-encodeCode Empty = 0
-encodeCode (Request detail) = encodeRequestMethod detail
-encodeCode (Response detail) =
+encodeCode CodeEmpty = 0
+encodeCode (CodeRequest detail) = encodeRequestMethod detail
+encodeCode (CodeResponse detail) =
   let (responseClass, responseDetail) = encodeResponseCode detail
    in (.|.) (shiftL responseClass 5) responseDetail
 

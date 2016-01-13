@@ -11,8 +11,8 @@ import Network.CoAP.Message
 import Network.CoAP.Endpoint
 import Network.CoAP.MessageCodec
 import Data.List (deleteBy)
-import qualified Network.CoAP.Request as Req
-import qualified Network.CoAP.Response as Res
+import Network.CoAP.Request
+import Network.CoAP.Response
 import Control.Monad
 import Data.Maybe
 import Control.Monad.State.Lazy
@@ -49,20 +49,20 @@ takeInboundMessage messageId = do
   return message
 
 
-createRequest :: Endpoint -> Message -> Req.Method -> Req.Request
+createRequest :: Endpoint -> Message -> Method -> Request
 createRequest clientHost message method =
-   Req.Request { Req.requestMethod  = method
-               , Req.requestOptions = messageOptions message
-               , Req.requestPayload = messagePayload message
-               , Req.requestOrigin  = clientHost
-               , Req.requestId      = messageId (messageHeader message) }
+   Request { requestMethod  = method
+           , requestOptions = messageOptions message
+           , requestPayload = messagePayload message
+           , requestOrigin  = clientHost
+           , requestId      = messageId (messageHeader message) }
 
-handleRequest :: Endpoint -> Message -> Req.Method -> MessagingState Req.Request
+handleRequest :: Endpoint -> Message -> Method -> MessagingState Request
 handleRequest endpoint message method = do
   queueInboundMessage message
   return (createRequest endpoint message method)
 
-handleResponse :: Message -> Res.ResponseCode -> MessagingState ()
+handleResponse :: Message -> ResponseCode -> MessagingState ()
 handleResponse _ _ = error "Unexpected message response"
 
 handleEmpty :: Message -> MessagingState ()
@@ -77,20 +77,20 @@ handleEmpty message = do
     ACK -> put (inbound, newOutbound)
     _ -> error "Unable to handle empty message type"
 
-recvRequest :: Socket -> MessagingState Req.Request
+recvRequest :: Socket -> MessagingState Request
 recvRequest sock = do
   (msgData, endpoint) <- liftIO (N.recvFrom sock 65535)
   let message = decode msgData
   let header  = messageHeader message
   let code    = messageCode header
   case code of
-    Request method -> do
+    CodeRequest method -> do
       request <- handleRequest endpoint message method
       return request
-    Response responseCode -> do
+    CodeResponse responseCode -> do
       handleResponse message responseCode
       recvRequest sock
-    Empty -> do
+    CodeEmpty -> do
       handleEmpty message
       recvRequest sock
 
@@ -99,29 +99,29 @@ responseType CON = ACK
 responseType NON = NON
 responseType _   = error "Unexpected request code type"
 
-responseHeader :: Header -> Res.Response -> Header
+responseHeader :: Header -> Response -> Header
 responseHeader origHeader response =
   Header { messageVersion = messageVersion origHeader 
          , messageType = responseType (messageType origHeader)
-         , messageCode = Response (Res.responseCode response)
+         , messageCode = CodeResponse (responseCode response)
          , messageId = messageId origHeader }
     
 
-sendResponse :: Socket -> Res.Response -> MessagingState ()
+sendResponse :: Socket -> Response -> MessagingState ()
 sendResponse sock response = do
-  let request = Res.request response
-  let origin = Req.requestOrigin request
-  let msgId = Req.requestId request
+  let req = request response
+  let origin = requestOrigin req
+  let msgId = requestId req
   (Just origMsg) <- takeInboundMessage msgId
   let outgoingMessage = Message { messageHeader  = responseHeader (messageHeader origMsg) response
                                 , messageToken   = messageToken origMsg
-                                , messageOptions = Res.responseOptions response
-                                , messagePayload = Res.responsePayload response }
+                                , messageOptions = responseOptions response
+                                , messagePayload = responsePayload response }
 
 
   let encoded = encode outgoingMessage
   _ <- liftIO (N.sendTo sock encoded origin)
   return ()
 
-sendRequest :: Socket -> MessageStore -> Req.Request -> IO Res.Response
+sendRequest :: Socket -> MessageStore -> Request -> IO Response
 sendRequest sock _ _ = error "Not defined"
