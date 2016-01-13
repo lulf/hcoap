@@ -23,7 +23,13 @@ testEncodeDecode =
     
     assertEqual "Decoded message not same as original" (show msg) (show decoded)
     )
-  
+
+-- TODO, negative tests:
+-- * Invalid token length
+-- * Invalid code
+-- * Unknown options
+-- * Bad payload marker
+
 instance Arbitrary Type where
   arbitrary = elements [CON, NON, ACK, RST]
 
