@@ -2,8 +2,9 @@ import Network.CoAP.MessageCodec
 import Network.CoAP.Message
 import Network.CoAP.Request
 import Test.HUnit
-import Data.ByteString
+import Data.ByteString hiding (putStrLn)
 import Test.QuickCheck
+import Prelude hiding (null, length)
 
 tests = TestList [TestLabel "testEncodeDecode" testEncodeDecode]
 
@@ -46,23 +47,16 @@ instance Arbitrary Header where
                    , messageCode    = CodeRequest msgMethod
                    , messageId      = msgId})
 
-genSafeChar :: Gen Char
-genSafeChar = elements ['a'..'z']
-
-genSafeString :: Gen String
-genSafeString = vectorOf 10 genSafeChar
 
 instance Arbitrary ByteString where
-  arbitrary = do
-    str <- arbitrary
-    return (pack str)
-
+  arbitrary = suchThat (fmap pack arbitrary) (\s -> ((length s > 0) && (length s <= 8)))
 
 instance Arbitrary Message where
   arbitrary = do
     hdr <- arbitrary
+    tkn <- arbitrary
     return (Message { messageHeader = hdr
-                    , messageToken = Nothing
+                    , messageToken = tkn
                     , messageOptions = []
                     , messagePayload = Nothing })
 
@@ -74,7 +68,9 @@ checkCodec msg =
 
 main :: IO ()
 main = do
+  putStrLn "Running HUnit tests"
   runTestTT tests
+  putStrLn "Running QuickCheck tests"
   quickCheck checkCodec
   return ()
 
