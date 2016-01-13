@@ -29,6 +29,5 @@ executable hcoap-example-server
   build-depends:       base,
                        network,
                        bytestring,
-                       binary,
                        hcoap
   default-language:    Haskell2010
