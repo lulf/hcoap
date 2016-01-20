@@ -107,23 +107,25 @@ decodeOption 60 value valueLen = Size1 (decodeOptionInt value valueLen)
 
 getOptionInt :: Int -> Get Int
 getOptionInt valueLen = do
-  if valueLen < 256
-  then do
-    v <- getWord8
-    return (fromIntegral v)
-  else if valueLen < 65536
+  if valueLen == 0
+  then return 0
+  else if valueLen < 256
        then do
-         v <- getWord16be
+         v <- getWord8
          return (fromIntegral v)
-       else if valueLen < 16777216
+       else if valueLen < 65536
             then do
-              a <- getWord8
-              b <- getWord8
-              c <- getWord8
-              return ((.|.) ((.|.) (shiftL (fromIntegral a :: Int) 16) (shiftL (fromIntegral b :: Int) 8)) (fromIntegral c :: Int))
-            else do
-              v <- getWord32be
+              v <- getWord16be
               return (fromIntegral v)
+            else if valueLen < 16777216
+                 then do
+                   a <- getWord8
+                   b <- getWord8
+                   c <- getWord8
+                   return ((.|.) ((.|.) (shiftL (fromIntegral a :: Int) 16) (shiftL (fromIntegral b :: Int) 8)) (fromIntegral c :: Int))
+                 else do
+                   v <- getWord32be
+                   return (fromIntegral v)
 
 decodeOptionInt :: BS.ByteString -> Int -> Int
 decodeOptionInt value valueLen = runGet (getOptionInt valueLen) (fromStrict value)
@@ -154,11 +156,9 @@ getOption lastCode = do
       let valueLength = fromIntegral ((.&.) tmp 0x0F)
       fullDelta <- getOptionPart delta
       let optCode = lastCode + fullDelta
-
       fullLength <- getOptionPart valueLength
       value <- getByteString fullLength
       let option = decodeOption optCode value fullLength
-
       return (Just option)
 
 getOptionsLoop :: Int -> Get ([Option])

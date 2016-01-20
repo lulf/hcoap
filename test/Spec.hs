@@ -1,5 +1,6 @@
 import Network.CoAP.MessageCodec
 import Network.CoAP.Message
+import Network.CoAP.Options
 import Network.CoAP.Request
 import Test.HUnit
 import Data.ByteString hiding (putStrLn)
@@ -11,12 +12,12 @@ tests = TestList [TestLabel "testEncodeDecode" testEncodeDecode]
 testEncodeDecode =
   TestCase (do
     let hdr = Header { messageVersion = 1
-                     , messageType = CON
-                     , messageCode = CodeRequest GET
-                     , messageId = 3 }
+                     , messageType = RST 
+                     , messageCode = CodeRequest PUT
+                     , messageId = 1 }
     let msg = Message { messageHeader = hdr
                       , messageToken = Nothing
-                      , messageOptions = []
+                      , messageOptions = [ContentFormat TextPlain]
                       , messagePayload = Nothing }
       
     let encoded = encode msg
@@ -51,13 +52,31 @@ instance Arbitrary Header where
 instance Arbitrary ByteString where
   arbitrary = suchThat (fmap pack arbitrary) (\s -> ((length s > 0) && (length s <= 8)))
 
+instance Arbitrary MediaType where
+  arbitrary = elements [TextPlain, ApplicationLinkFormat, ApplicationXml, ApplicationOctetStream, ApplicationExi, ApplicationJson]
+
+instance Arbitrary Option where
+  arbitrary = do
+    mediaType <- arbitrary
+    etag <- arbitrary
+    loc <- arbitrary
+    locquery <- arbitrary
+    puri <- arbitrary
+    pscheme <- arbitrary
+    uriHost <- arbitrary
+    uriPath <- arbitrary
+    uriQuery <- arbitrary
+    ifMatch <- arbitrary
+    elements [ContentFormat mediaType, ETag etag, LocationPath loc, LocationQuery locquery, ProxyUri puri, ProxyScheme pscheme, UriHost uriHost, UriPath uriPath, UriQuery uriQuery, IfMatch ifMatch]
+
 instance Arbitrary Message where
   arbitrary = do
     hdr <- arbitrary
     tkn <- arbitrary
+    options <- arbitrary
     return (Message { messageHeader = hdr
                     , messageToken = tkn
-                    , messageOptions = []
+                    , messageOptions = [options]
                     , messagePayload = Nothing })
 
 
