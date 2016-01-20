@@ -5,3 +5,5 @@ provides APIs for writing CoAP servers.
 The library is split into a high-level API in Network.CoAP (currently only for servers), and a lower layer API in Network.CoAP.Messaging and Network.CoAP.Message for working directly with CoAP messages.
 
 A high-level client API is in the works.
+
+[![Build Status](https://travis-ci.org/lulf/hcoap.svg?branch=master)](https://travis-ci.org/lulf/hcoap)
