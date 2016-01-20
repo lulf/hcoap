@@ -74,10 +74,11 @@ instance Arbitrary Message where
     hdr <- arbitrary
     tkn <- arbitrary
     options <- arbitrary
+    payload <- arbitrary
     return (Message { messageHeader = hdr
                     , messageToken = tkn
                     , messageOptions = [options]
-                    , messagePayload = Nothing })
+                    , messagePayload = payload })
 
 
 checkCodec msg =
