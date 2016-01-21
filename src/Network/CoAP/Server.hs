@@ -1,15 +1,15 @@
-module Network.CoAP
-( module Network.CoAP.Request
-, module Network.CoAP.Response
-, module Network.CoAP.Options
+module Network.CoAP.Server
+( Request(..)
+, Method(..)
+, Response(..)
+, ResponseCode(..)
+, Option(..)
+, MediaType(..)
 , runServer
 ) where
 
-import Network.CoAP.Request
-import Network.CoAP.Response
-import Network.CoAP.Message
 import Network.CoAP.Messaging
-import Network.CoAP.Options
+import Network.CoAP.Types
 import Control.Monad.State
 import Network.Socket
 

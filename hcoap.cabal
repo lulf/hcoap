@@ -10,9 +10,9 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  exposed-modules: Network.CoAP, Network.CoAP.Message, Network.CoAP.MessageCodec,
-                   Network.CoAP.Messaging, Network.CoAP.Request, Network.CoAP.Response,
-                   Network.CoAP.Options, Network.CoAP.Payload, Network.CoAP.Endpoint
+  exposed-modules: Network.CoAP.Server, Network.CoAP.Message
+  other-modules: Network.CoAP.Types, Network.CoAP.MessageCodec, Network.CoAP.Messaging
+
   build-depends:       base,
                        bytestring,
                        binary,

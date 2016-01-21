@@ -1,7 +1,4 @@
-import Network.CoAP.MessageCodec
 import Network.CoAP.Message
-import Network.CoAP.Options
-import Network.CoAP.Request
 import Test.HUnit
 import Data.ByteString hiding (putStrLn)
 import Test.QuickCheck
@@ -11,10 +8,10 @@ tests = TestList [TestLabel "testEncodeDecode" testEncodeDecode]
 
 testEncodeDecode =
   TestCase (do
-    let hdr = Header { messageVersion = 1
-                     , messageType = RST 
-                     , messageCode = CodeRequest PUT
-                     , messageId = 1 }
+    let hdr = MessageHeader { messageVersion = 1
+                            , messageType = RST 
+                            , messageCode = CodeRequest PUT
+                            , messageId = 1 }
     let msg = Message { messageHeader = hdr
                       , messageToken = Nothing
                       , messageOptions = [ContentFormat TextPlain]
@@ -32,21 +29,21 @@ testEncodeDecode =
 -- * Unknown options
 -- * Bad payload marker
 
-instance Arbitrary Type where
+instance Arbitrary MessageType where
   arbitrary = elements [CON, NON, ACK, RST]
 
 instance Arbitrary Method where
   arbitrary = elements [PUT, GET, POST, DELETE]
 
-instance Arbitrary Header where
+instance Arbitrary MessageHeader where
   arbitrary = do
     msgType <- arbitrary
     msgMethod <- arbitrary
     msgId <- arbitrary
-    return (Header { messageVersion = 1
-                   , messageType    = msgType
-                   , messageCode    = CodeRequest msgMethod
-                   , messageId      = msgId})
+    return (MessageHeader { messageVersion = 1
+                          , messageType    = msgType
+                          , messageCode    = CodeRequest msgMethod
+                          , messageId      = msgId})
 
 
 instance Arbitrary ByteString where

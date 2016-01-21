@@ -7,15 +7,12 @@ module Network.CoAP.Messaging
 , MessagingState
 ) where
 
-import Network.CoAP.Message
-import Network.CoAP.Endpoint
+import Network.CoAP.Types
 import Network.CoAP.MessageCodec
 import Data.List (deleteBy)
-import Network.CoAP.Request
-import Network.CoAP.Response
 import Control.Monad
-import Data.Maybe
 import Control.Monad.State.Lazy
+import Data.Maybe
 import Network.Socket hiding (send, sendTo, recv, recvFrom)
 import qualified Network.Socket.ByteString as N
 
@@ -94,17 +91,17 @@ recvRequest sock = do
       handleEmpty message
       recvRequest sock
 
-responseType :: Type -> Type
+responseType :: MessageType -> MessageType
 responseType CON = ACK
 responseType NON = NON
 responseType _   = error "Unexpected request code type"
 
-responseHeader :: Header -> Response -> Header
+responseHeader :: MessageHeader -> Response -> MessageHeader
 responseHeader origHeader response =
-  Header { messageVersion = messageVersion origHeader 
-         , messageType = responseType (messageType origHeader)
-         , messageCode = CodeResponse (responseCode response)
-         , messageId = messageId origHeader }
+  MessageHeader { messageVersion = messageVersion origHeader 
+                , messageType = responseType (messageType origHeader)
+                , messageCode = CodeResponse (responseCode response)
+                , messageId = messageId origHeader }
     
 
 sendResponse :: Socket -> Response -> MessagingState ()

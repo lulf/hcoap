@@ -4,11 +4,7 @@ module Network.CoAP.MessageCodec
 ) where
 
 import Debug.Trace
-import Network.CoAP.Options
-import Network.CoAP.Payload
-import Network.CoAP.Message
-import Network.CoAP.Request
-import Network.CoAP.Response
+import Network.CoAP.Types
 import Data.ByteString.Lazy
 import qualified Data.ByteString as BS
 import Data.Word
@@ -21,7 +17,7 @@ import Data.Binary.Put
 import Data.Bits
 import Prelude hiding (null, length, fromStrict, toStrict)
 
-getType :: Word8 -> Get Type
+getType :: Word8 -> Get MessageType
 getType 0 = return (CON)
 getType 1 = return (NON)
 getType 2 = return (ACK)
@@ -38,7 +34,7 @@ getRequestMethod _ = fail "Unknown request method"
 getResponseCode :: Word8 -> Get ResponseCode
 getResponseCode _ = return (Created)
 
-getCode :: Word8 -> Word8 -> Get Code
+getCode :: Word8 -> Word8 -> Get MessageCode
 getCode 0 0 = return (CodeEmpty)
 getCode 0 detail = do
   method <- getRequestMethod detail
@@ -58,7 +54,7 @@ getTokenLength len =
      then fail "Invalid token length"
      else return (len)
 
-getHeader :: Get (Header, Word8)
+getHeader :: Get (MessageHeader, Word8)
 getHeader = do
   tmp <- getWord8
   let version = fromIntegral (shiftR ((.&.) tmp 0xC0) 6)
@@ -71,10 +67,9 @@ getHeader = do
   code <- getCode clazz detail
 
   id <- getWord16be
-  -- return (trace ("TKL: " ++ (show tokenLength) ++ ", clazz: " ++ (show clazz) ++ ", detail: " ++ (show detail) ++ ", code: " ++ (show code) ++ ", id: " ++ (show id)) ((Header version msgType code (fromIntegral id)), tokenLength))
-  return ((Header version msgType code (fromIntegral id)), tokenLength)
+  return ((MessageHeader version msgType code (fromIntegral id)), tokenLength)
 
-getToken :: Word8 -> Get (Maybe Token)
+getToken :: Word8 -> Get (Maybe MessageToken)
 getToken 0 = return (Nothing)
 getToken n = do
   str <- getByteString (fromIntegral n)
@@ -197,7 +192,7 @@ getMessage = do
 decode :: BS.ByteString -> Message
 decode msg = runGet getMessage (fromStrict msg)
 
-encodeType :: Type -> Word8
+encodeType :: MessageType -> Word8
 encodeType CON = 0
 encodeType NON = 1
 encodeType ACK = 2
@@ -232,14 +227,14 @@ encodeResponseCode ServiceUnavailable    = (5, 3)
 encodeResponseCode GatewayTimeout        = (5, 4)
 encodeResponseCode ProxyingNotSupported  = (5, 5)
 
-encodeCode :: Code -> Word8
+encodeCode :: MessageCode -> Word8
 encodeCode CodeEmpty = 0
 encodeCode (CodeRequest detail) = encodeRequestMethod detail
 encodeCode (CodeResponse detail) =
   let (responseClass, responseDetail) = encodeResponseCode detail
    in (.|.) (shiftL responseClass 5) responseDetail
 
-putHeader :: Header -> Word8 -> Put
+putHeader :: MessageHeader -> Word8 -> Put
 putHeader header tokenLength = do
   let version = fromIntegral (messageVersion header) :: Word8
   let eType   = encodeType (messageType header)
@@ -250,7 +245,7 @@ putHeader header tokenLength = do
   putWord16be id
 
 
-putToken :: Maybe Token -> Put
+putToken :: Maybe MessageToken -> Put
 putToken Nothing = return ()
 putToken (Just token) = putByteString token
 

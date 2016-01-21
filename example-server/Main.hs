@@ -1,4 +1,4 @@
-import Network.CoAP
+import Network.CoAP.Server
 import Network.Socket
 import qualified Data.ByteString.Char8 as B
 
@@ -10,13 +10,11 @@ findPath (option:options) =
     _             -> findPath options
 
 requestHandler :: Request -> IO Response
-requestHandler req@(Request id method options payload origin) = do
+requestHandler request = do
+  let options = requestOptions request
   let path = findPath options
-  let response = Response { request = req
-                          , responseCode = Content
-                          , responseOptions = [ContentFormat ApplicationJson]
-                          , responsePayload = Just (B.pack ("{\"path\":\"" ++ (B.unpack path) ++ "\"}")) }
-  return response
+  let payload = Just (B.pack ("{\"path\":\"" ++ (B.unpack path) ++ "\"}"))
+  return (Response request Content [(ContentFormat ApplicationJson)] payload)
               
 
 main :: IO ()
