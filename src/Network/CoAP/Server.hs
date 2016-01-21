@@ -1,5 +1,9 @@
 module Network.CoAP.Server
-( Request(..)
+( Request
+, requestMethod
+, requestOptions
+, requestPayload
+, requestOrigin
 , Method(..)
 , Response(..)
 , ResponseCode(..)
