@@ -46,15 +46,15 @@ takeInboundMessage messageId = do
   return message
 
 
-createRequest :: Endpoint -> Message -> Method -> Request
+createRequest :: Endpoint -> Message -> Method -> CoAPRequest
 createRequest clientHost message method =
-   Request { requestMethod  = method
-           , requestOptions = messageOptions message
-           , requestPayload = messagePayload message
-           , requestOrigin  = clientHost
-           , requestId      = messageId (messageHeader message) }
+   CoAPRequest { requestMethod  = method
+               , requestOptions = messageOptions message
+               , requestPayload = messagePayload message
+               , requestOrigin  = clientHost
+               , requestId      = messageId (messageHeader message) }
 
-handleRequest :: Endpoint -> Message -> Method -> MessagingState Request
+handleRequest :: Endpoint -> Message -> Method -> MessagingState CoAPRequest
 handleRequest endpoint message method = do
   queueInboundMessage message
   return (createRequest endpoint message method)
@@ -74,7 +74,7 @@ handleEmpty message = do
     ACK -> put (inbound, newOutbound)
     _ -> error "Unable to handle empty message type"
 
-recvRequest :: Socket -> MessagingState Request
+recvRequest :: Socket -> MessagingState CoAPRequest
 recvRequest sock = do
   (msgData, endpoint) <- liftIO (N.recvFrom sock 65535)
   let message = decode msgData
@@ -96,7 +96,7 @@ responseType CON = ACK
 responseType NON = NON
 responseType _   = error "Unexpected request code type"
 
-responseHeader :: MessageHeader -> Response -> MessageHeader
+responseHeader :: MessageHeader -> CoAPResponse -> MessageHeader
 responseHeader origHeader response =
   MessageHeader { messageVersion = messageVersion origHeader 
                 , messageType = responseType (messageType origHeader)
@@ -104,7 +104,7 @@ responseHeader origHeader response =
                 , messageId = messageId origHeader }
     
 
-sendResponse :: Socket -> Response -> MessagingState ()
+sendResponse :: Socket -> CoAPResponse -> MessagingState ()
 sendResponse sock response = do
   let req = request response
   let origin = requestOrigin req
@@ -120,5 +120,5 @@ sendResponse sock response = do
   _ <- liftIO (N.sendTo sock encoded origin)
   return ()
 
-sendRequest :: Socket -> MessageStore -> Request -> IO Response
+sendRequest :: Socket -> SockAddr -> Method -> [Option] -> Maybe Payload -> MessagingState CoAPResponse
 sendRequest sock _ _ = error "Not defined"
