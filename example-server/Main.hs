@@ -14,7 +14,7 @@ requestHandler request = do
   let options = requestOptions request
   let path = findPath options
   let payload = Just (B.pack ("{\"path\":\"" ++ (B.unpack path) ++ "\"}"))
-  return (Response request Content [(ContentFormat ApplicationJson)] payload)
+  return (createResponse request Content [(ContentFormat ApplicationJson)] payload)
               
 
 main :: IO ()

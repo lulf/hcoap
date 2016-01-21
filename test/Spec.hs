@@ -13,7 +13,7 @@ testEncodeDecode =
                             , messageCode = CodeRequest PUT
                             , messageId = 1 }
     let msg = Message { messageHeader = hdr
-                      , messageToken = Nothing
+                      , messageToken = empty
                       , messageOptions = [ContentFormat TextPlain]
                       , messagePayload = Nothing }
       

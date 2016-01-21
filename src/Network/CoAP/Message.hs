@@ -5,7 +5,7 @@ module Network.CoAP.Message
 , MessageType(..)
 , MessageId(..)
 , MessageCode(..)
-, MessageToken(..)
+, Token(..)
 , Payload(..)
 , Option(..)
 , MediaType(..)

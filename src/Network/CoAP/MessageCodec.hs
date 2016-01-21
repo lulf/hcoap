@@ -69,12 +69,11 @@ getHeader = do
   id <- getWord16be
   return ((MessageHeader version msgType code (fromIntegral id)), tokenLength)
 
-getToken :: Word8 -> Get (Maybe MessageToken)
-getToken 0 = return (Nothing)
+getToken :: Word8 -> Get (Token)
+getToken 0 = return BS.empty
 getToken n = do
   str <- getByteString (fromIntegral n)
-  --return (trace ("Token length: " ++ (show str)) (Just str))
-  return (Just str)
+  return str
 
 intToMediaType 0  = TextPlain
 intToMediaType 40 = ApplicationLinkFormat
@@ -245,9 +244,8 @@ putHeader header tokenLength = do
   putWord16be id
 
 
-putToken :: Maybe MessageToken -> Put
-putToken Nothing = return ()
-putToken (Just token) = putByteString token
+putToken :: Token -> Put
+putToken = putByteString
 
 putOptionInt :: Int -> Put
 putOptionInt 0 = return ()
@@ -336,8 +334,7 @@ putPayload (Just payload) = do
 putMessage :: Message -> Put
 putMessage msg = do
   let token = messageToken msg
-  let tokenLength = case token of Just t -> BS.length t
-                                  _ -> 0
+  let tokenLength = BS.length token
   putHeader  (messageHeader  msg) (fromIntegral tokenLength)
   putToken   token
   putOptions (messageOptions msg)

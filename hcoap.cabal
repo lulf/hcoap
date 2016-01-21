@@ -10,7 +10,7 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  exposed-modules: Network.CoAP.Server, Network.CoAP.Message
+  exposed-modules: Network.CoAP.Server, Network.CoAP.Client, Network.CoAP.Message
   other-modules: Network.CoAP.Types, Network.CoAP.MessageCodec, Network.CoAP.Messaging
 
   build-depends:       base,
@@ -35,6 +35,16 @@ test-suite hcoap-test
 
 executable hcoap-example-server
   hs-source-dirs:      example-server
+  main-is:             Main.hs
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  build-depends:       base,
+                       network,
+                       bytestring,
+                       hcoap
+  default-language:    Haskell2010
+
+executable hcoap-example-client
+  hs-source-dirs:      example-client
   main-is:             Main.hs
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base,

@@ -1,11 +1,12 @@
 module Network.CoAP.Server
-( Request
+( Request(..)
 , requestMethod
 , requestOptions
 , requestPayload
 , requestOrigin
 , Method(..)
 , Response(..)
+, createResponse
 , ResponseCode(..)
 , Option(..)
 , MediaType(..)
@@ -16,6 +17,16 @@ import Network.CoAP.Messaging
 import Network.CoAP.Types
 import Control.Monad.State
 import Network.Socket
+
+type Request = CoAPRequest
+type Response = CoAPResponse
+
+createResponse :: Request -> ResponseCode -> [Option] -> Maybe Payload -> Response
+createResponse req code options payload =
+    CoAPResponse { request = req
+                 , responseCode = code
+                 , responseOptions = options
+                 , responsePayload = payload }
 
 runServer :: Socket -> (Request -> IO Response) -> IO ()
 runServer sock requestHandler = do

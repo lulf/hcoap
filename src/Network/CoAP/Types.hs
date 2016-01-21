@@ -37,15 +37,15 @@ data Option = ContentFormat MediaType
             deriving (Show)
 
 type Payload = BS.ByteString
-type RequestId = Word16
 data Method = GET | POST | PUT | DELETE deriving (Show)
 
-data Request = Request
-  { requestId      :: RequestId
-  , requestMethod  :: Method
-  , requestOptions :: [Option]
-  , requestPayload :: Maybe Payload
-  , requestOrigin  :: SockAddr } deriving (Show)
+data CoAPRequest = CoAPRequest
+    { requestToken       :: Token
+    , requestMethod      :: Method
+    , requestOptions     :: [Option]
+    , requestPayload     :: Maybe Payload
+    , requestDestination :: SockAddr
+    , requestOrigin      :: SockAddr } deriving (Show)
 
 data ResponseCode = Created
                   | Deleted
@@ -70,8 +70,8 @@ data ResponseCode = Created
                   | ProxyingNotSupported
                   deriving (Show)
 
-data Response = Response
-  { request          :: Request
+data CoAPResponse = CoAPResponse
+  { request          :: CoAPRequest
   , responseCode     :: ResponseCode
   , responseOptions  :: [Option]
   , responsePayload  :: Maybe Payload } deriving (Show)
@@ -93,11 +93,11 @@ data MessageHeader = MessageHeader
 
 type MessageVersion = Int
 type MessageId      = Word16
-type MessageToken   = BS.ByteString
+type Token          = BS.ByteString
 
 data Message = Message
   { messageHeader  :: MessageHeader
-  , messageToken   :: Maybe MessageToken
+  , messageToken   :: Token
   , messageOptions :: [Option]
   , messagePayload :: Maybe Payload
   } deriving (Show)
