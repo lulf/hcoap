@@ -7,14 +7,6 @@ module Network.CoAP.Messaging
 , createMessagingState
 , MessagingState
 ) where
-import Network.CoAP.Types
-import Network.CoAP.MessageCodec
-import Data.List (deleteBy, find, partition, filter)
-import Control.Monad
-import Control.Monad.State.Lazy
-import Data.Maybe
-import Network.Socket hiding (send, sendTo, recv, recvFrom)
-import qualified Network.Socket.ByteString as N
 
 -- TODO: This module should be split in two
 -- * One part which only handles queueing outgoing/incoming messages and performs timeout checks to
@@ -25,6 +17,14 @@ import qualified Network.Socket.ByteString as N
 --
 -- This parts may run in multiple threads
 
+import Network.CoAP.Types
+import Network.CoAP.MessageCodec
+import Data.List (deleteBy, find, partition, filter)
+import Control.Monad
+import Control.Monad.State.Lazy
+import Data.Maybe
+import Network.Socket hiding (send, sendTo, recv, recvFrom)
+import qualified Network.Socket.ByteString as N
 
 -- A message store contains an inbound and outbound list of messages that needs to be ACKed
 type MessageList = [Message]
