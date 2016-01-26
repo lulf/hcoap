@@ -82,7 +82,7 @@ data MessageCode = CodeRequest Method
                  | CodeEmpty
                  deriving (Show, Eq)
 
-data MessageType = CON | NON | ACK | RST deriving (Show)
+data MessageType = CON | NON | ACK | RST deriving (Show, Eq)
 
 data MessageHeader = MessageHeader
   { messageVersion     :: MessageVersion 

@@ -1,9 +1,9 @@
 module Network.CoAP.Messaging
 ( createMessagingState
 , MessagingState
-, sendMessage
-, recvMessageWithCode
 , messagingLoop
+, recvRequest
+, sendResponse
 ) where
 import Network.CoAP.Types
 import Network.CoAP.MessageCodec
@@ -43,19 +43,24 @@ instance Eq MessageState where
 -- A message store contains an inbound and outbound list of messages that needs to be ACKed
 type MessageList = [MessageState]
 data MessagingStore = MessagingStore { incomingMessages :: TVar MessageList
-                                     , outgoingMessages :: TVar MessageList }
+                                     , outgoingMessages :: TVar MessageList
+                                     , unackedMessages  :: TVar MessageList }
 data MessagingState = MessagingState Socket MessagingStore
 
 createMessagingState :: Socket -> IO MessagingState
 createMessagingState sock = do
   incoming <- newTVarIO []
   outgoing <- newTVarIO []
-  return (MessagingState sock (MessagingStore incoming outgoing))
+  unacked <- newTVarIO []
+  return (MessagingState sock (MessagingStore incoming outgoing unacked))
+
+queueMessages :: [MessageState] -> TVar MessageList -> STM ()
+queueMessages messages msgListVar = do
+  msgList <- readTVar msgListVar
+  writeTVar msgListVar (messages ++ msgList)
 
 queueMessage :: MessageState -> TVar MessageList -> STM ()
-queueMessage message msgListVar = do
-  msgList <- readTVar msgListVar
-  writeTVar msgListVar (message:msgList)
+queueMessage message = queueMessages [message]
 
 takeMessage :: TVar MessageList -> STM MessageState
 takeMessage msgListVar = do
@@ -68,6 +73,12 @@ takeMessage msgListVar = do
     writeTVar msgListVar newMsgList
     return message
 
+takeMessagesOlderThan :: TimeStamp -> TVar MessageList -> STM [MessageState]
+takeMessagesOlderThan timeStamp msgListVar = do
+  msgList <- readTVar msgListVar
+  let (oldMessages, remainingMessages) = partition (\x -> timeStamp > (insertionTime x)) msgList
+  writeTVar msgListVar remainingMessages
+  return oldMessages
 
 cmpMessageCode :: MessageCode -> MessageCode -> Bool
 cmpMessageCode (CodeRequest _) (CodeRequest _) = True
@@ -82,7 +93,7 @@ takeMessageByCode msgCode msgListVar = do
   then retry
   else do
     let sortedMsgList = sortBy (comparing insertionTime) msgList
-    let msg = find (\x -> cmpMessageCode msgCode (messageCode (messageHeader (message x)))) msgList
+    let msg = find (\x -> cmpMessageCode msgCode (messageCode (messageHeader (message x)))) sortedMsgList
     case msg of
       Nothing -> retry
       Just m -> do
@@ -90,6 +101,16 @@ takeMessageByCode msgCode msgListVar = do
         writeTVar msgListVar newMsgList
         return m
 
+takeMessageByToken :: Token -> TVar MessageList -> STM (Maybe MessageState)
+takeMessageByToken token msgListVar = do
+  msgList <- readTVar msgListVar
+  if null msgList
+  then return Nothing
+  else do
+    let sortedMsgList = sortBy (comparing insertionTime) msgList
+    let msg = find (\x -> token == messageToken (message x)) sortedMsgList
+    return msg
+  
 
 recvLoop :: MessagingState -> IO ()
 recvLoop state@(MessagingState sock store) = do
@@ -114,13 +135,38 @@ sendLoop state@(MessagingState sock store) = do
   _ <- N.sendTo sock msgData origin
   sendLoop state
 
---timerLoop :: IO ()
---
+
+createAckMessage :: MessageState -> MessageState
+createAckMessage origMessageState =
+  let origMessage = message origMessageState
+      origHeader = messageHeader origMessage
+      newHeader = MessageHeader { messageVersion = messageVersion origHeader
+                                , messageType = ACK
+                                , messageCode = CodeEmpty
+                                , messageId = messageId origHeader }
+      newMessage = Message { messageHeader = newHeader
+                           , messageToken = messageToken origMessage
+                           , messageOptions = [] -- Copy original?
+                           , messagePayload = Nothing }
+   in MessageState { message = newMessage
+                   , insertionTime = insertionTime origMessageState
+                   , srcEndpoint = dstEndpoint origMessageState
+                   , dstEndpoint = srcEndpoint origMessageState }
+
+    
+
+timerLoop :: MessagingState -> IO ()
+timerLoop state@(MessagingState sock store) = do
+  atomically (do
+    oldMessages <- takeMessagesOlderThan 12345 (unackedMessages store)
+    let ackMessages = map createAckMessage oldMessages
+    queueMessages ackMessages (unackedMessages store))
+
 messagingLoop :: MessagingState -> IO ()
 messagingLoop state = do
   recvThread <- forkIO (recvLoop state)
-  sendLoop state
---  timerThread <- forkIO timerLoop
+  sendThread <- forkIO (sendLoop state)
+  timerLoop state
 
 sendMessage :: Message -> Endpoint -> MessagingState -> IO ()
 sendMessage message dstEndpoint (MessagingState sock store) = do
@@ -132,31 +178,69 @@ sendMessage message dstEndpoint (MessagingState sock store) = do
                                   , dstEndpoint = dstEndpoint }
   atomically (queueMessage messageState (outgoingMessages store))
 
-recvMessageWithCode :: MessageCode -> MessagingState -> IO Message
+recvMessageWithCode :: MessageCode -> MessagingState -> IO MessageState
 recvMessageWithCode msgCode (MessagingState sock store) = do
-  msgState <- atomically (takeMessageByCode msgCode (incomingMessages store))
-  return (message msgState)
+  msgState <- atomically (do
+    msgState <- takeMessageByCode msgCode (incomingMessages store)
+    let msgType = messageType (messageHeader (message msgState))
+    when (msgType == CON) (queueMessage msgState (unackedMessages store))
+    return msgState)
+  return msgState
 
+createRequest :: MessageState -> CoAPRequest
+createRequest msgState =
+  let msg = message msgState
+      (CodeRequest method) = messageCode (messageHeader msg)
+   in CoAPRequest { requestMethod      = method
+                  , requestOptions     = messageOptions msg 
+                  , requestPayload     = messagePayload msg 
+                  , requestOrigin      = srcEndpoint msgState
+                  , requestDestination = dstEndpoint msgState
+                  , requestToken       = messageToken msg }
+
+recvRequest :: MessagingState -> IO CoAPRequest
+recvRequest state = do
+  msgState <- recvMessageWithCode (CodeRequest GET) state
+  return (createRequest msgState)
+
+responseHeader :: Maybe Message -> CoAPResponse -> MessageHeader
+responseHeader Nothing response =
+  MessageHeader { messageVersion = 1
+                , messageType = CON -- Contain this info in request
+                , messageCode = CodeResponse (responseCode response)
+                , messageId = 4 } -- UH OH
+responseHeader (Just msg) response = 
+  let origHeader = messageHeader msg
+   in MessageHeader { messageVersion = messageVersion origHeader
+                    , messageType = ACK
+                    , messageCode = CodeResponse (responseCode response)
+                    , messageId = messageId origHeader }
+
+sendResponse :: CoAPResponse -> MessagingState -> IO ()
+sendResponse response state@(MessagingState _ store) = do
+  let req = request response
+  let origin = requestOrigin req
+  let reqToken = requestToken req
+  origMsg <- atomically (takeMessageByToken reqToken (unackedMessages store))
+  let outgoingMessage = Message { messageHeader  = responseHeader origMsg response
+                                , messageToken   = reqToken
+                                , messageOptions = responseOptions response
+                                , messagePayload = responsePayload response }
+  sendMessage outgoingMessage origin state
+
+--
+--  let encoded = encode outgoingMessage
+--  _ <- liftIO (N.sendTo sock encoded origin)
+--  return ()
+--      request <- handleRequest (srcEndpoint, destEndpoint) message method
+--      return request
+--    CodeResponse _ -> error "Unexpected message response"
+--    CodeEmpty -> do
+--      handleEmpty message
+--      recvRequest sock
 -- sendMessage :: Message -> MessagingState ()
 -- recvMessageWithToken :: Token -> MessagingState Message
 
-
---createRequest :: (Endpoint, Endpoint) -> Message -> Method -> CoAPRequest
---createRequest (clientHost, srvHost) message method =
---   CoAPRequest { requestMethod      = method
---               , requestOptions     = messageOptions message
---               , requestPayload     = messagePayload message
---               , requestOrigin      = clientHost
---               , requestDestination = srvHost
---               , requestToken       = messageToken message }
---
---handleRequest :: (Endpoint, Endpoint) -> Message -> Method -> MessagingState CoAPRequest
---handleRequest endpoints message method = do
---  queueInboundMessage message
---  return (createRequest endpoints message method)
---
---
---handleEmpty :: Message -> MessagingState ()
 --handleEmpty message = do
 --  (inbound, outbound) <- get
 --  let header = messageHeader message
@@ -168,50 +252,7 @@ recvMessageWithCode msgCode (MessagingState sock store) = do
 --    ACK -> put (inbound, newOutbound)
 --    _ -> error "Unable to handle empty message type"
 --
---recvRequest :: Socket -> MessagingState CoAPRequest
---recvRequest sock = do
---  (msgData, srcEndpoint) <- liftIO (N.recvFrom sock 65535)
---  destEndpoint <- liftIO (getSocketName sock)
---  let message = decode msgData
---  let header  = messageHeader message
---  let code    = messageCode header
---  case code of
---    CodeRequest method -> do
---      request <- handleRequest (srcEndpoint, destEndpoint) message method
---      return request
---    CodeResponse _ -> error "Unexpected message response"
---    CodeEmpty -> do
---      handleEmpty message
---      recvRequest sock
---
---responseType :: MessageType -> MessageType
---responseType CON = ACK
---responseType NON = NON
---responseType _   = error "Unexpected request code type"
---
---responseHeader :: MessageHeader -> CoAPResponse -> MessageHeader
---responseHeader origHeader response =
---  MessageHeader { messageVersion = messageVersion origHeader 
---                , messageType = responseType (messageType origHeader)
---                , messageCode = CodeResponse (responseCode response)
---                , messageId = messageId origHeader }
---    
---
---sendResponse :: Socket -> CoAPResponse -> MessagingState ()
---sendResponse sock response = do
---  let req = request response
---  let origin = requestOrigin req
---  let reqId = requestToken req
---  (Just origMsg) <- takeInboundMessageByToken reqId
---  let outgoingMessage = Message { messageHeader  = responseHeader (messageHeader origMsg) response
---                                , messageToken   = messageToken origMsg
---                                , messageOptions = responseOptions response
---                                , messagePayload = responsePayload response }
---
---
---  let encoded = encode outgoingMessage
---  _ <- liftIO (N.sendTo sock encoded origin)
---  return ()
+
 --
 --allocateMessageId :: IO MessageId
 --allocateMessageId = return 0

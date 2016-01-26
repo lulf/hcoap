@@ -38,8 +38,9 @@ requestLoop :: MessagingState -> (Request -> IO Response) -> IO ()
 requestLoop state requestHandler = do
   --message <- recvMessageWithType CodeRequest state
   putStrLn "Waiting for incoming message"
-  message <- recvMessageWithCode (CodeRequest GET) state
-  putStrLn ("Received message: " ++ (show message))
---  response <- requestHandler request
+  request <- recvRequest state
+  putStrLn ("Received message: " ++ (show request))
+  response <- requestHandler request
+  putStrLn ("Produced response: " ++ (show response))
 --  sendResponse response state
   requestLoop state requestHandler
