@@ -37,7 +37,7 @@ data Option = ContentFormat MediaType
             deriving (Show)
 
 type Payload = BS.ByteString
-data Method = GET | POST | PUT | DELETE deriving (Show)
+data Method = GET | POST | PUT | DELETE deriving (Show, Eq)
 
 data CoAPRequest = CoAPRequest
     { requestToken       :: Token
@@ -68,7 +68,7 @@ data ResponseCode = Created
                   | ServiceUnavailable
                   | GatewayTimeout
                   | ProxyingNotSupported
-                  deriving (Show)
+                  deriving (Show, Eq)
 
 data CoAPResponse = CoAPResponse
   { request          :: CoAPRequest
@@ -80,7 +80,7 @@ data CoAPResponse = CoAPResponse
 data MessageCode = CodeRequest Method
                  | CodeResponse ResponseCode
                  | CodeEmpty
-                 deriving (Show)
+                 deriving (Show, Eq)
 
 data MessageType = CON | NON | ACK | RST deriving (Show)
 

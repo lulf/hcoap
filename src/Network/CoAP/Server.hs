@@ -15,7 +15,7 @@ module Network.CoAP.Server
 
 import Network.CoAP.Messaging
 import Network.CoAP.Types
-import Control.Monad.State
+import Control.Concurrent
 import Network.Socket
 
 type Request = CoAPRequest
@@ -30,12 +30,16 @@ createResponse req code options payload =
 
 runServer :: Socket -> (Request -> IO Response) -> IO ()
 runServer sock requestHandler = do
-  let state = createMessagingState
-  runStateT (runServerOnce sock requestHandler) state
-  return ()
+  state <- createMessagingState sock
+  msgLoop <- forkIO (messagingLoop state) 
+  requestLoop state requestHandler
 
-runServerOnce :: Socket -> (Request -> IO Response) -> MessagingState ()
-runServerOnce sock requestHandler = do
-  request <- recvRequest sock
-  response <- liftIO (requestHandler request)
-  sendResponse sock response
+requestLoop :: MessagingState -> (Request -> IO Response) -> IO ()
+requestLoop state requestHandler = do
+  --message <- recvMessageWithType CodeRequest state
+  putStrLn "Waiting for incoming message"
+  message <- recvMessageWithCode (CodeRequest GET) state
+  putStrLn ("Received message: " ++ (show message))
+--  response <- requestHandler request
+--  sendResponse response state
+  requestLoop state requestHandler

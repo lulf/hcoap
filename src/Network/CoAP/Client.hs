@@ -23,20 +23,20 @@ data Request =
                     
 
 doRequest :: Socket -> SockAddr -> Request -> IO Response
-doRequest sock addr req = do
-  let state = createMessagingState
-  (response, _) <- runStateT (runClient sock addr req) state
-  return response
+doRequest sock addr req = error "not yet implemented"
+  --let state = createMessagingStore
+  --(response, _) <- runStateT (runClient sock addr req) state
+  --return response
 
-runClient :: Socket -> SockAddr -> Request -> MessagingState Response
-runClient sock addr (Request method options payload) = do
-  myAddr <- liftIO (getSocketName sock)
-  let tkn = (pack "Hello")
-  let request = T.CoAPRequest { T.requestToken = tkn
-                                  , T.requestMethod = method
-                                  , T.requestOptions = options
-                                  , T.requestPayload = payload
-                                  , T.requestDestination = addr
-                                  , T.requestOrigin = myAddr }
-  sendRequest sock request
-  recvResponse sock request
+runClient :: Socket -> SockAddr -> Request -> Response
+runClient sock addr (Request method options payload) = error "not yet implemented"
+--  myAddr <- liftIO (getSocketName sock)
+--  let tkn = (pack "Hello")
+--  let request = T.CoAPRequest { T.requestToken = tkn
+--                                  , T.requestMethod = method
+--                                  , T.requestOptions = options
+--                                  , T.requestPayload = payload
+--                                  , T.requestDestination = addr
+--                                  , T.requestOrigin = myAddr }
+  --sendRequest sock request
+  --recvResponse sock request
