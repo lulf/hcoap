@@ -45,12 +45,33 @@ runServer sock requestHandler = do
   msgLoop <- forkIO (messagingLoop state) 
   requestLoop state requestHandler
 
+createRequest :: MessageContext -> CoAPRequest
+createRequest reqCtx = CoAPRequest { requestMessage = message reqCtx
+                                   , requestOrigin = srcEndpoint reqCtx
+                                   , requestDestination = dstEndpoint reqCtx }
+
 requestLoop :: MessagingState -> (Request -> IO Response) -> IO ()
 requestLoop state requestHandler = do
   putStrLn "Waiting for incoming message"
-  request <- recvRequest state
+  requestCtx <- recvRequest state
+  let request = createRequest requestCtx
   putStrLn ("Received request: " ++ (show request))
   response <- requestHandler request
   putStrLn ("Produced response: " ++ (show response))
-  sendResponse response state
+  let responseMsg = createResponseMessage response
+  sendResponse requestCtx responseMsg state
   requestLoop state requestHandler
+
+createResponseMessage :: CoAPResponse -> Message
+createResponseMessage response =
+  let origMsg = requestMessage (request response)
+      origHeader = messageHeader origMsg
+      header = MessageHeader { messageVersion = messageVersion origHeader
+                             , messageType = messageType origHeader
+                             , messageCode = CodeResponse (responseCode response)
+                             , messageId = 0 }
+   in Message { messageHeader  = header
+              , messageToken   = messageToken origMsg
+              , messageOptions = responseOptions response
+              , messagePayload = responsePayload response }
+

@@ -190,56 +190,48 @@ recvMessageWithCode msgCode (MessagingState sock store) = do
     when (msgType == CON) (queueMessage msgState (unackedMessages store))
     return msgCtx)
 
-recvRequest :: MessagingState -> IO CoAPRequest
-recvRequest state = do
-  messageCtx <- recvMessageWithCode (CodeRequest GET) state
-  return (CoAPRequest { requestMessage = message messageCtx
-                      , requestOrigin = srcEndpoint messageCtx
-                      , requestDestination = dstEndpoint messageCtx })
+recvRequest :: MessagingState -> IO MessageContext
+recvRequest = recvMessageWithCode (CodeRequest GET)
 
-createResponse :: MessageId -> CoAPResponse -> Message
-createResponse msgId response =
-  let origMsg = requestMessage (request response)
-      origHeader = messageHeader origMsg
-      header = MessageHeader { messageVersion = messageVersion origHeader
-                             , messageType = messageType origHeader
-                             , messageCode = CodeResponse (responseCode response)
-                             , messageId = msgId }
-   in Message { messageHeader  = header
-              , messageToken   = messageToken origMsg
-              , messageOptions = responseOptions response
-              , messagePayload = responsePayload response }
-
-createAckResponse :: CoAPResponse -> Message
+createAckResponse :: Message -> Message
 createAckResponse response =
-  let origMsg = requestMessage (request response)
-      origHeader = messageHeader origMsg
+  let origHeader = messageHeader response
       header = MessageHeader { messageVersion = messageVersion origHeader
                              , messageType = ACK
-                             , messageCode = CodeResponse (responseCode response)
+                             , messageCode = messageCode origHeader
                              , messageId = messageId origHeader }
    in Message { messageHeader  = header
-              , messageToken   = messageToken origMsg
-              , messageOptions = responseOptions response
-              , messagePayload = responsePayload response }
+              , messageToken   = messageToken response
+              , messageOptions = messageOptions response
+              , messagePayload = messagePayload response }
+
+setMessageId :: MessageId -> Message -> Message
+setMessageId msgId response =
+  let origHeader = messageHeader response
+      header = MessageHeader { messageVersion = messageVersion origHeader
+                             , messageType = messageType origHeader
+                             , messageCode = messageCode origHeader
+                             , messageId = msgId }
+   in Message { messageHeader  = header
+              , messageToken   = messageToken response
+              , messageOptions = messageOptions response
+              , messagePayload = messagePayload response }
 
 allocateMessageId :: IO MessageId
 allocateMessageId = return 0
 
-sendResponse :: CoAPResponse -> MessagingState -> IO ()
-sendResponse response state@(MessagingState _ store) = do
-  let req = request response
-  let origin = requestOrigin req
-  let origMsg = requestMessage req
-  let reqToken = messageToken origMsg
+sendResponse :: MessageContext -> Message -> MessagingState -> IO ()
+sendResponse requestCtx response state@(MessagingState _ store) = do
+  let origin = srcEndpoint requestCtx
+  let reqToken = messageToken (message requestCtx)
   unackedMsg <- atomically (takeMessageByToken reqToken (unackedMessages store))  
 
   msgId <- case unackedMsg of
              Nothing -> allocateMessageId
-             _       -> return (messageId (messageHeader origMsg))
+             _       -> return (messageId (messageHeader (message requestCtx)))
     
   let outgoingMessage = case unackedMsg of
-                          Nothing -> createResponse msgId response
+                          Nothing -> setMessageId msgId response
                           _       -> createAckResponse response
 
   sendMessage outgoingMessage origin state
