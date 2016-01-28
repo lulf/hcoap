@@ -39,11 +39,12 @@ data Option = ContentFormat MediaType
 type Payload = BS.ByteString
 data Method = GET | POST | PUT | DELETE deriving (Show, Eq)
 
+data MessageContext = MessageContext { message :: Message
+                                     , srcEndpoint :: Endpoint
+                                     , dstEndpoint :: Endpoint } deriving (Show)
+
 data CoAPRequest = CoAPRequest
-    { requestToken       :: Token
-    , requestMethod      :: Method
-    , requestOptions     :: [Option]
-    , requestPayload     :: Maybe Payload
+    { requestMessage     :: Message
     , requestDestination :: SockAddr
     , requestOrigin      :: SockAddr } deriving (Show)
 

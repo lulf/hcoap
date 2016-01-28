@@ -28,14 +28,12 @@ import Control.Concurrent
 
 type TimeStamp = Int
 
-data MessageState = MessageState { message        :: Message
-                                 , insertionTime  :: TimeStamp
-                                 , srcEndpoint    :: Endpoint
-                                 , dstEndpoint    :: Endpoint } deriving(Show)
+data MessageState = MessageState { messageContext :: MessageContext
+                                 , insertionTime  :: TimeStamp } deriving(Show)
 
 cmpMessageState a b =
-  ((messageId (messageHeader (message a))) == (messageId (messageHeader (message b)))) &&
-  ((srcEndpoint a) == (srcEndpoint b))
+  ((messageId (messageHeader (message (messageContext a)))) == (messageId (messageHeader (message (messageContext b))))) &&
+  ((srcEndpoint (messageContext a)) == (srcEndpoint (messageContext b)))
 
 instance Eq MessageState where
   (==) = cmpMessageState
@@ -93,7 +91,7 @@ takeMessageByCode msgCode msgListVar = do
   then retry
   else do
     let sortedMsgList = sortBy (comparing insertionTime) msgList
-    let msg = find (\x -> cmpMessageCode msgCode (messageCode (messageHeader (message x)))) sortedMsgList
+    let msg = find (\x -> cmpMessageCode msgCode (messageCode (messageHeader (message (messageContext x))))) sortedMsgList
     case msg of
       Nothing -> retry
       Just m -> do
@@ -108,7 +106,7 @@ takeMessageByToken token msgListVar = do
   then return Nothing
   else do
     let sortedMsgList = sortBy (comparing insertionTime) msgList
-    let msg = find (\x -> token == messageToken (message x)) sortedMsgList
+    let msg = find (\x -> token == messageToken (message (messageContext x))) sortedMsgList
     return msg
   
 
@@ -119,10 +117,11 @@ recvLoop state@(MessagingState sock store) = do
   dstEndpoint <- getSocketName sock
   let now = 1234
   let message = decode msgData
-  let messageState = MessageState { message = message
-                                  , insertionTime = now
+  let messageCtx = MessageContext { message = message
                                   , srcEndpoint = srcEndpoint
                                   , dstEndpoint = dstEndpoint }
+  let messageState = MessageState { messageContext = messageCtx 
+                                  , insertionTime = now }
   atomically (queueMessage messageState (incomingMessages store))
   recvLoop state
   
@@ -130,15 +129,17 @@ sendLoop :: MessagingState -> IO ()
 sendLoop state@(MessagingState sock store) = do
   putStrLn "Sending queued packets"
   msgState <- atomically (takeMessage (outgoingMessages store))
-  let msgData = encode (message msgState)
-  let origin = dstEndpoint msgState
+  let msgCtx = messageContext msgState
+  let msgData = encode (message msgCtx)
+  let origin = dstEndpoint msgCtx
   _ <- N.sendTo sock msgData origin
   sendLoop state
 
 
 createAckMessage :: MessageState -> MessageState
 createAckMessage origMessageState =
-  let origMessage = message origMessageState
+  let origCtx = messageContext origMessageState
+      origMessage = message origCtx
       origHeader = messageHeader origMessage
       newHeader = MessageHeader { messageVersion = messageVersion origHeader
                                 , messageType = ACK
@@ -146,12 +147,13 @@ createAckMessage origMessageState =
                                 , messageId = messageId origHeader }
       newMessage = Message { messageHeader = newHeader
                            , messageToken = messageToken origMessage
-                           , messageOptions = [] -- Copy original?
+                           , messageOptions = []
                            , messagePayload = Nothing }
-   in MessageState { message = newMessage
-                   , insertionTime = insertionTime origMessageState
-                   , srcEndpoint = dstEndpoint origMessageState
-                   , dstEndpoint = srcEndpoint origMessageState }
+      newCtx = MessageContext { message = newMessage
+                              , srcEndpoint = dstEndpoint origCtx
+                              , dstEndpoint = srcEndpoint origCtx}
+   in MessageState { messageContext = newCtx
+                   , insertionTime = 1234 }-- FIX
 
     
 
@@ -172,62 +174,76 @@ sendMessage :: Message -> Endpoint -> MessagingState -> IO ()
 sendMessage message dstEndpoint (MessagingState sock store) = do
   srcEndpoint <- getSocketName sock
   let now = 12345
-  let messageState = MessageState { message = message
-                                  , insertionTime = now
-                                  , srcEndpoint = srcEndpoint
-                                  , dstEndpoint = dstEndpoint }
+  let ctx = MessageContext { message = message
+                           , srcEndpoint = srcEndpoint
+                           , dstEndpoint = dstEndpoint }
+  let messageState = MessageState { messageContext = ctx
+                                  , insertionTime = now }
   atomically (queueMessage messageState (outgoingMessages store))
 
-recvMessageWithCode :: MessageCode -> MessagingState -> IO MessageState
+recvMessageWithCode :: MessageCode -> MessagingState -> IO MessageContext
 recvMessageWithCode msgCode (MessagingState sock store) = do
-  msgState <- atomically (do
+  atomically (do
     msgState <- takeMessageByCode msgCode (incomingMessages store)
-    let msgType = messageType (messageHeader (message msgState))
+    let msgCtx = messageContext msgState
+    let msgType = messageType (messageHeader (message msgCtx))
     when (msgType == CON) (queueMessage msgState (unackedMessages store))
-    return msgState)
-  return msgState
-
-createRequest :: MessageState -> CoAPRequest
-createRequest msgState =
-  let msg = message msgState
-      (CodeRequest method) = messageCode (messageHeader msg)
-   in CoAPRequest { requestMethod      = method
-                  , requestOptions     = messageOptions msg 
-                  , requestPayload     = messagePayload msg 
-                  , requestOrigin      = srcEndpoint msgState
-                  , requestDestination = dstEndpoint msgState
-                  , requestToken       = messageToken msg }
+    return msgCtx)
 
 recvRequest :: MessagingState -> IO CoAPRequest
 recvRequest state = do
-  msgState <- recvMessageWithCode (CodeRequest GET) state
-  return (createRequest msgState)
+  messageCtx <- recvMessageWithCode (CodeRequest GET) state
+  return (CoAPRequest { requestMessage = message messageCtx
+                      , requestOrigin = srcEndpoint messageCtx
+                      , requestDestination = dstEndpoint messageCtx })
 
-responseHeader :: Maybe Message -> CoAPResponse -> MessageHeader
-responseHeader Nothing response =
-  MessageHeader { messageVersion = 1
-                , messageType = CON -- Contain this info in request
-                , messageCode = CodeResponse (responseCode response)
-                , messageId = 4 } -- UH OH
-responseHeader (Just msg) response = 
-  let origHeader = messageHeader msg
-   in MessageHeader { messageVersion = messageVersion origHeader
-                    , messageType = ACK
-                    , messageCode = CodeResponse (responseCode response)
-                    , messageId = messageId origHeader }
+createResponse :: MessageId -> CoAPResponse -> Message
+createResponse msgId response =
+  let origMsg = requestMessage (request response)
+      origHeader = messageHeader origMsg
+      header = MessageHeader { messageVersion = messageVersion origHeader
+                             , messageType = messageType origHeader
+                             , messageCode = CodeResponse (responseCode response)
+                             , messageId = msgId }
+   in Message { messageHeader  = header
+              , messageToken   = messageToken origMsg
+              , messageOptions = responseOptions response
+              , messagePayload = responsePayload response }
+
+createAckResponse :: CoAPResponse -> Message
+createAckResponse response =
+  let origMsg = requestMessage (request response)
+      origHeader = messageHeader origMsg
+      header = MessageHeader { messageVersion = messageVersion origHeader
+                             , messageType = ACK
+                             , messageCode = CodeResponse (responseCode response)
+                             , messageId = messageId origHeader }
+   in Message { messageHeader  = header
+              , messageToken   = messageToken origMsg
+              , messageOptions = responseOptions response
+              , messagePayload = responsePayload response }
+
+allocateMessageId :: IO MessageId
+allocateMessageId = return 0
 
 sendResponse :: CoAPResponse -> MessagingState -> IO ()
 sendResponse response state@(MessagingState _ store) = do
   let req = request response
   let origin = requestOrigin req
-  let reqToken = requestToken req
-  origMsg <- atomically (takeMessageByToken reqToken (unackedMessages store))
-  let outgoingMessage = Message { messageHeader  = responseHeader origMsg response
-                                , messageToken   = reqToken
-                                , messageOptions = responseOptions response
-                                , messagePayload = responsePayload response }
-  sendMessage outgoingMessage origin state
+  let origMsg = requestMessage req
+  let reqToken = messageToken origMsg
+  unackedMsg <- atomically (takeMessageByToken reqToken (unackedMessages store))  
 
+  msgId <- case unackedMsg of
+             Nothing -> allocateMessageId
+             _       -> return (messageId (messageHeader origMsg))
+    
+  let outgoingMessage = case unackedMsg of
+                          Nothing -> createResponse msgId response
+                          _       -> createAckResponse response
+
+  sendMessage outgoingMessage origin state
+--
 --
 --  let encoded = encode outgoingMessage
 --  _ <- liftIO (N.sendTo sock encoded origin)
@@ -254,8 +270,6 @@ sendResponse response state@(MessagingState _ store) = do
 --
 
 --
---allocateMessageId :: IO MessageId
---allocateMessageId = return 0
 --
 --sendRequest :: Socket -> CoAPRequest -> MessagingState ()
 --sendRequest sock request = do
