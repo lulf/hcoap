@@ -16,6 +16,8 @@ import Network.Socket hiding (send, sendTo, recv, recvFrom)
 import qualified Network.Socket.ByteString as N
 import Control.Concurrent.STM
 import Control.Concurrent
+import Data.Maybe
+import Data.Time
 
 -- TODO: This module should be split in two
 -- * One part which only handles queueing outgoing/incoming messages and performs timeout checks to
@@ -26,10 +28,10 @@ import Control.Concurrent
 --
 -- This parts may run in multiple threads
 
-type TimeStamp = Int
+type TimeStamp = UTCTime
 
 data MessageState = MessageState { messageContext :: MessageContext
-                                 , insertionTime  :: TimeStamp } deriving(Show)
+                                 , insertionTime  :: TimeStamp } deriving (Show)
 
 cmpMessageState a b =
   ((messageId (messageHeader (message (messageContext a)))) == (messageId (messageHeader (message (messageContext b))))) &&
@@ -74,9 +76,12 @@ takeMessage msgListVar = do
 takeMessagesOlderThan :: TimeStamp -> TVar MessageList -> STM [MessageState]
 takeMessagesOlderThan timeStamp msgListVar = do
   msgList <- readTVar msgListVar
-  let (oldMessages, remainingMessages) = partition (\x -> timeStamp > (insertionTime x)) msgList
-  writeTVar msgListVar remainingMessages
-  return oldMessages
+  if null msgList
+  then retry
+  else do
+    let (oldMessages, remainingMessages) = partition (\x -> timeStamp > (insertionTime x)) msgList
+    writeTVar msgListVar remainingMessages
+    return oldMessages
 
 cmpMessageCode :: MessageCode -> MessageCode -> Bool
 cmpMessageCode (CodeRequest _) (CodeRequest _) = True
@@ -106,8 +111,9 @@ takeMessageByToken token msgListVar = do
   then return Nothing
   else do
     let sortedMsgList = sortBy (comparing insertionTime) msgList
-    let msg = find (\x -> token == messageToken (message (messageContext x))) sortedMsgList
-    return msg
+    let (foundMessages, remainingMessages) = partition (\x -> token == messageToken (message (messageContext x))) sortedMsgList
+    writeTVar msgListVar remainingMessages
+    return (listToMaybe foundMessages)
   
 
 recvLoop :: MessagingState -> IO ()
@@ -115,7 +121,7 @@ recvLoop state@(MessagingState sock store) = do
   putStrLn "Waiting for UDP packet"
   (msgData, srcEndpoint) <- N.recvFrom sock 65535
   dstEndpoint <- getSocketName sock
-  let now = 1234
+  now <- getCurrentTime
   let message = decode msgData
   let messageCtx = MessageContext { message = message
                                   , srcEndpoint = srcEndpoint
@@ -136,8 +142,8 @@ sendLoop state@(MessagingState sock store) = do
   sendLoop state
 
 
-createAckMessage :: MessageState -> MessageState
-createAckMessage origMessageState =
+createAckMessage :: UTCTime -> MessageState -> MessageState
+createAckMessage now origMessageState =
   let origCtx = messageContext origMessageState
       origMessage = message origCtx
       origHeader = messageHeader origMessage
@@ -153,16 +159,29 @@ createAckMessage origMessageState =
                               , srcEndpoint = dstEndpoint origCtx
                               , dstEndpoint = srcEndpoint origCtx}
    in MessageState { messageContext = newCtx
-                   , insertionTime = 1234 }-- FIX
+                   , insertionTime = now }
 
     
 
+ackTimeout :: NominalDiffTime
+ackTimeout = 2
+
 timerLoop :: MessagingState -> IO ()
 timerLoop state@(MessagingState sock store) = do
-  atomically (do
-    oldMessages <- takeMessagesOlderThan 12345 (unackedMessages store)
-    let ackMessages = map createAckMessage oldMessages
-    queueMessages ackMessages (unackedMessages store))
+  takeStamp <- getCurrentTime
+  let oldestTime = addUTCTime (-ackTimeout) takeStamp
+  oldMessages <- atomically (do
+    takeMessagesOlderThan oldestTime (unackedMessages store))
+  if null oldMessages
+  then do
+    threadDelay 100000
+    timerLoop state
+  else do
+    putStrLn "Timeout! Queueing ack messages"
+    now <- getCurrentTime
+    let ackMessages = map (createAckMessage now) oldMessages
+    atomically (queueMessages ackMessages (outgoingMessages store))
+    timerLoop state
 
 messagingLoop :: MessagingState -> IO ()
 messagingLoop state = do
@@ -173,7 +192,7 @@ messagingLoop state = do
 sendMessage :: Message -> Endpoint -> MessagingState -> IO ()
 sendMessage message dstEndpoint (MessagingState sock store) = do
   srcEndpoint <- getSocketName sock
-  let now = 12345
+  now <- getCurrentTime
   let ctx = MessageContext { message = message
                            , srcEndpoint = srcEndpoint
                            , dstEndpoint = dstEndpoint }
@@ -183,12 +202,15 @@ sendMessage message dstEndpoint (MessagingState sock store) = do
 
 recvMessageWithCode :: MessageCode -> MessagingState -> IO MessageContext
 recvMessageWithCode msgCode (MessagingState sock store) = do
-  atomically (do
+  putStrLn "Fetching messages matching requests"
+  msg <- atomically (do
     msgState <- takeMessageByCode msgCode (incomingMessages store)
     let msgCtx = messageContext msgState
     let msgType = messageType (messageHeader (message msgCtx))
     when (msgType == CON) (queueMessage msgState (unackedMessages store))
     return msgCtx)
+  putStrLn ("Was message of type " ++ (show (messageType (messageHeader (message msg)))))
+  return msg
 
 recvRequest :: MessagingState -> IO MessageContext
 recvRequest = recvMessageWithCode (CodeRequest GET)
