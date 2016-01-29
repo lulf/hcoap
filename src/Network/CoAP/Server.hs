@@ -69,7 +69,7 @@ createResponseMessage response =
       header = MessageHeader { messageVersion = messageVersion origHeader
                              , messageType = messageType origHeader
                              , messageCode = CodeResponse (responseCode response)
-                             , messageId = 0 }
+                             , messageId = messageId origHeader }
    in Message { messageHeader  = header
               , messageToken   = messageToken origMsg
               , messageOptions = responseOptions response
