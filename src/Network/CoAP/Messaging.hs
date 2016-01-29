@@ -20,15 +20,6 @@ import Data.Maybe
 import Data.Time
 import System.Random
 
--- TODO: This module should be split in two
--- * One part which only handles queueing outgoing/incoming messages and performs timeout checks to
---   ack messages
--- * One part working on request/responses that will simply ask the first part in a (non)blocking
---   fashion about messages matching a desired pattern (I.e. all messages, requests only, or
---   responses matching a token).
---
--- This parts may run in multiple threads
-
 type TimeStamp = UTCTime
 
 data MessageState = MessageState { messageContext  :: MessageContext
@@ -92,7 +83,7 @@ checkRetransmit :: TimeStamp -> MessageState -> Bool
 checkRetransmit now msgState =
   let timeout = replyTimeout msgState
       startTime = insertionTime msgState
-      endTime = addUTCTime timeout startTime
+      endTime = addUTCTime (realToFrac timeout) startTime
    in now > endTime
 
 takeMessagesToRetransmit :: TimeStamp -> TVar MessageList -> STM [MessageState]
@@ -104,8 +95,6 @@ takeMessagesToRetransmit now msgListVar = do
     let (retransmitMessages, remainingMessages) = partition (checkRetransmit now) msgList
     writeTVar msgListVar remainingMessages
     return retransmitMessages
-
-    
 
 cmpMessageCode :: MessageCode -> MessageCode -> Bool
 cmpMessageCode (CodeRequest _) (CodeRequest _) = True
@@ -138,7 +127,20 @@ takeMessageByToken token msgListVar = do
     let (foundMessages, remainingMessages) = partition (\x -> token == messageToken (message (messageContext x))) sortedMsgList
     writeTVar msgListVar remainingMessages
     return (listToMaybe foundMessages)
-  
+
+takeMessageByIdAndOrigin :: MessageId -> Endpoint -> TVar MessageList -> STM (Maybe MessageState)
+takeMessageByIdAndOrigin msgId origin msgListVar = do
+  msgList <- readTVar msgListVar
+  if null msgList
+  then return Nothing
+  else do
+    let msg = find (\x -> (origin == srcEndpoint (messageContext x)) && (msgId == messageId (messageHeader (message (messageContext x))))) msgList
+    case msg of
+      Nothing -> return msg
+      Just m -> do
+        let newMsgList = delete m msgList
+        writeTVar msgListVar newMsgList
+        return msg
 
 recvLoop :: MessagingState -> IO ()
 recvLoop state@(MessagingState sock store) = do
@@ -154,13 +156,27 @@ recvLoop state@(MessagingState sock store) = do
                                   , insertionTime = now
                                   , replyTimeout = 0
                                   , retransmitCount = 0 }
-  atomically (queueMessage messageState (incomingMessages store))
+  let msgId = messageId (messageHeader message)
+  let msgType = messageType (messageHeader message)
+  when (msgType == ACK) (do
+    putStrLn "Received ACK, deleting from outgoing messages"
+    _ <- atomically (takeMessageByIdAndOrigin msgId srcEndpoint (outgoingMessages store))
+    return ())
+  let msgCode = messageCode (messageHeader message)
+  when (msgCode /= CodeEmpty) (do
+    putStrLn "Received non-empty message, queuing incoming"
+    _ <- atomically (queueMessage messageState (incomingMessages store))
+    return ())
   recvLoop state
   
 sendLoop :: MessagingState -> IO ()
 sendLoop state@(MessagingState sock store) = do
   putStrLn "Sending queued packets"
-  msgState <- atomically (takeMessage (outgoingMessages store))
+  msgState <- atomically (do
+    msgState <- takeMessage (outgoingMessages store)
+    let msgType = messageType (messageHeader (message (messageContext msgState)))
+    when (msgType == CON) (queueMessage msgState (unconfirmedMessages store))
+    return msgState)
   let msgCtx = messageContext msgState
   let msgData = encode (message msgCtx)
   let origin = dstEndpoint msgCtx
@@ -215,8 +231,27 @@ ackLoop state@(MessagingState sock store) = do
 ackRandomFactor :: Double
 ackRandomFactor = 1.5
 
+maxRetransmitCount :: Integer
+maxRetransmitCount = 4
+
+adjustRetransmissionState :: TimeStamp -> MessageState -> MessageState
+adjustRetransmissionState now msgState =
+  MessageState { messageContext = messageContext msgState
+               , insertionTime = now
+               , replyTimeout = (replyTimeout msgState) * 2
+               , retransmitCount = (retransmitCount msgState) + 1 }
+
 retransmitLoop :: MessagingState -> IO ()
-retransmitLoop state@(MessagingState sock store) = error "foO"
+retransmitLoop state@(MessagingState sock store) = do
+  now <- getCurrentTime
+  toRetransmit <- atomically (takeMessagesToRetransmit now (unconfirmedMessages store))
+  if null toRetransmit
+  then threadDelay 100000
+  else (do
+    putStrLn "Attempting to retransmit messages"
+    let adjustedMessages = filter (\s -> (retransmitCount s) <= maxRetransmitCount) (map (adjustRetransmissionState now) toRetransmit)
+    atomically (queueMessages adjustedMessages (outgoingMessages store)))
+  retransmitLoop state
   
 
 messagingLoop :: MessagingState -> IO ()
@@ -231,6 +266,7 @@ sendMessage message dstEndpoint (MessagingState sock store) = do
   srcEndpoint <- getSocketName sock
   now <- getCurrentTime
   initialTimeout <- randomRIO (ackTimeout, ackTimeout * ackRandomFactor)
+  putStrLn("Initial timeout for reply is " ++ (show initialTimeout))
   let ctx = MessageContext { message = message
                            , srcEndpoint = srcEndpoint
                            , dstEndpoint = dstEndpoint }
