@@ -57,7 +57,6 @@ requestLoop state requestHandler = do
   let request = createRequest requestCtx
   putStrLn ("Received request: " ++ (show request))
   response <- requestHandler request
-  threadDelay 3000000
   putStrLn ("Produced response: " ++ (show response))
   let responseMsg = createResponseMessage response
   sendResponse requestCtx responseMsg state
