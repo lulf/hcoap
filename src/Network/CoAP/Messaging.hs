@@ -14,6 +14,7 @@ import Data.Maybe
 import Data.Ord
 import Network.Socket hiding (send, sendTo, recv, recvFrom)
 import qualified Network.Socket.ByteString as N
+import Data.ByteString (empty)
 import Control.Concurrent.STM
 import Control.Concurrent
 import Data.Maybe
@@ -134,9 +135,9 @@ takeMessageByIdAndOrigin msgId origin msgListVar = do
   if null msgList
   then return Nothing
   else do
-    let msg = find (\x -> (origin == srcEndpoint (messageContext x)) && (msgId == messageId (messageHeader (message (messageContext x))))) msgList
+    let msg = find (\x -> (origin == dstEndpoint (messageContext x)) && (msgId == messageId (messageHeader (message (messageContext x))))) msgList
     case msg of
-      Nothing -> return msg
+      Nothing -> return Nothing
       Just m -> do
         let newMsgList = delete m msgList
         writeTVar msgListVar newMsgList
@@ -159,8 +160,8 @@ recvLoop state@(MessagingState sock store) = do
   let msgId = messageId (messageHeader message)
   let msgType = messageType (messageHeader message)
   when (msgType == ACK) (do
-    putStrLn "Received ACK, deleting from outgoing messages"
-    _ <- atomically (takeMessageByIdAndOrigin msgId srcEndpoint (outgoingMessages store))
+    putStrLn ("Received ACK, deleting from outgoing messages")
+    _ <- atomically (takeMessageByIdAndOrigin msgId srcEndpoint (unconfirmedMessages store))
     return ())
   let msgCode = messageCode (messageHeader message)
   when (msgCode /= CodeEmpty) (do
@@ -194,7 +195,7 @@ createAckMessage now origMessageState =
                                 , messageCode = CodeEmpty
                                 , messageId = messageId origHeader }
       newMessage = Message { messageHeader = newHeader
-                           , messageToken = messageToken origMessage
+                           , messageToken = empty
                            , messageOptions = []
                            , messagePayload = Nothing }
       newCtx = MessageContext { message = newMessage
@@ -248,7 +249,7 @@ retransmitLoop state@(MessagingState sock store) = do
   if null toRetransmit
   then threadDelay 100000
   else (do
-    putStrLn "Attempting to retransmit messages"
+    putStrLn ("Attempting to retransmit messages: " ++ (show toRetransmit))
     let adjustedMessages = filter (\s -> (retransmitCount s) <= maxRetransmitCount) (map (adjustRetransmissionState now) toRetransmit)
     atomically (queueMessages adjustedMessages (outgoingMessages store)))
   retransmitLoop state
