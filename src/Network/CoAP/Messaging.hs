@@ -249,7 +249,7 @@ retransmitLoop state@(MessagingState sock store) = do
   if null toRetransmit
   then threadDelay 100000
   else (do
-    putStrLn ("Attempting to retransmit messages: " ++ (show toRetransmit))
+    putStrLn ("Attempting to retransmit messages")
     let adjustedMessages = filter (\s -> (retransmitCount s) <= maxRetransmitCount) (map (adjustRetransmissionState now) toRetransmit)
     atomically (queueMessages adjustedMessages (outgoingMessages store)))
   retransmitLoop state
@@ -267,7 +267,6 @@ sendMessage message dstEndpoint (MessagingState sock store) = do
   srcEndpoint <- getSocketName sock
   now <- getCurrentTime
   initialTimeout <- randomRIO (ackTimeout, ackTimeout * ackRandomFactor)
-  putStrLn("Initial timeout for reply is " ++ (show initialTimeout))
   let ctx = MessageContext { message = message
                            , srcEndpoint = srcEndpoint
                            , dstEndpoint = dstEndpoint }
@@ -286,7 +285,6 @@ recvMessageWithCode msgCode (MessagingState sock store) = do
     let msgType = messageType (messageHeader (message msgCtx))
     when (msgType == CON) (queueMessage msgState (unackedMessages store))
     return msgCtx)
-  putStrLn ("Was message of type " ++ (show (messageType (messageHeader (message msg)))))
   return msg
 
 recvRequest :: MessagingState -> IO MessageContext
