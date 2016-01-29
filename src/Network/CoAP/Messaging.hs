@@ -18,6 +18,7 @@ import Control.Concurrent.STM
 import Control.Concurrent
 import Data.Maybe
 import Data.Time
+import System.Random
 
 -- TODO: This module should be split in two
 -- * One part which only handles queueing outgoing/incoming messages and performs timeout checks to
@@ -30,8 +31,10 @@ import Data.Time
 
 type TimeStamp = UTCTime
 
-data MessageState = MessageState { messageContext :: MessageContext
-                                 , insertionTime  :: TimeStamp } deriving (Show)
+data MessageState = MessageState { messageContext  :: MessageContext
+                                 , insertionTime   :: TimeStamp
+                                 , replyTimeout    :: Double 
+                                 , retransmitCount :: Integer } deriving (Show)
 
 cmpMessageState a b =
   ((messageId (messageHeader (message (messageContext a)))) == (messageId (messageHeader (message (messageContext b))))) &&
@@ -42,9 +45,10 @@ instance Eq MessageState where
 
 -- A message store contains an inbound and outbound list of messages that needs to be ACKed
 type MessageList = [MessageState]
-data MessagingStore = MessagingStore { incomingMessages :: TVar MessageList
-                                     , outgoingMessages :: TVar MessageList
-                                     , unackedMessages  :: TVar MessageList }
+data MessagingStore = MessagingStore { incomingMessages    :: TVar MessageList
+                                     , outgoingMessages    :: TVar MessageList
+                                     , unackedMessages     :: TVar MessageList 
+                                     , unconfirmedMessages :: TVar MessageList }
 data MessagingState = MessagingState Socket MessagingStore
 
 createMessagingState :: Socket -> IO MessagingState
@@ -52,7 +56,8 @@ createMessagingState sock = do
   incoming <- newTVarIO []
   outgoing <- newTVarIO []
   unacked <- newTVarIO []
-  return (MessagingState sock (MessagingStore incoming outgoing unacked))
+  unconfirmed <- newTVarIO []
+  return (MessagingState sock (MessagingStore incoming outgoing unacked unconfirmed))
 
 queueMessages :: [MessageState] -> TVar MessageList -> STM ()
 queueMessages messages msgListVar = do
@@ -82,6 +87,25 @@ takeMessagesOlderThan timeStamp msgListVar = do
     let (oldMessages, remainingMessages) = partition (\x -> timeStamp > (insertionTime x)) msgList
     writeTVar msgListVar remainingMessages
     return oldMessages
+
+checkRetransmit :: TimeStamp -> MessageState -> Bool
+checkRetransmit now msgState =
+  let timeout = replyTimeout msgState
+      startTime = insertionTime msgState
+      endTime = addUTCTime timeout startTime
+   in now > endTime
+
+takeMessagesToRetransmit :: TimeStamp -> TVar MessageList -> STM [MessageState]
+takeMessagesToRetransmit now msgListVar = do
+  msgList <- readTVar msgListVar
+  if null msgList
+  then retry
+  else do
+    let (retransmitMessages, remainingMessages) = partition (checkRetransmit now) msgList
+    writeTVar msgListVar remainingMessages
+    return retransmitMessages
+
+    
 
 cmpMessageCode :: MessageCode -> MessageCode -> Bool
 cmpMessageCode (CodeRequest _) (CodeRequest _) = True
@@ -127,7 +151,9 @@ recvLoop state@(MessagingState sock store) = do
                                   , srcEndpoint = srcEndpoint
                                   , dstEndpoint = dstEndpoint }
   let messageState = MessageState { messageContext = messageCtx 
-                                  , insertionTime = now }
+                                  , insertionTime = now
+                                  , replyTimeout = 0
+                                  , retransmitCount = 0 }
   atomically (queueMessage messageState (incomingMessages store))
   recvLoop state
   
@@ -159,45 +185,59 @@ createAckMessage now origMessageState =
                               , srcEndpoint = dstEndpoint origCtx
                               , dstEndpoint = srcEndpoint origCtx}
    in MessageState { messageContext = newCtx
+                   , replyTimeout = 0
+                   , retransmitCount = 0
                    , insertionTime = now }
 
     
 
-ackTimeout :: NominalDiffTime
+ackTimeout :: Double
 ackTimeout = 2
 
-timerLoop :: MessagingState -> IO ()
-timerLoop state@(MessagingState sock store) = do
+ackLoop :: MessagingState -> IO ()
+ackLoop state@(MessagingState sock store) = do
   takeStamp <- getCurrentTime
-  let oldestTime = addUTCTime (-ackTimeout) takeStamp
+  let nomTime = realToFrac (-ackTimeout)
+  let oldestTime = addUTCTime nomTime takeStamp
   oldMessages <- atomically (do
     takeMessagesOlderThan oldestTime (unackedMessages store))
   if null oldMessages
   then do
     threadDelay 100000
-    timerLoop state
+    ackLoop state
   else do
     putStrLn "Timeout! Queueing ack messages"
     now <- getCurrentTime
     let ackMessages = map (createAckMessage now) oldMessages
     atomically (queueMessages ackMessages (outgoingMessages store))
-    timerLoop state
+    ackLoop state
+
+ackRandomFactor :: Double
+ackRandomFactor = 1.5
+
+retransmitLoop :: MessagingState -> IO ()
+retransmitLoop state@(MessagingState sock store) = error "foO"
+  
 
 messagingLoop :: MessagingState -> IO ()
 messagingLoop state = do
   recvThread <- forkIO (recvLoop state)
   sendThread <- forkIO (sendLoop state)
-  timerLoop state
+  ackThread <- forkIO (ackLoop state)
+  retransmitLoop state
 
 sendMessage :: Message -> Endpoint -> MessagingState -> IO ()
 sendMessage message dstEndpoint (MessagingState sock store) = do
   srcEndpoint <- getSocketName sock
   now <- getCurrentTime
+  initialTimeout <- randomRIO (ackTimeout, ackTimeout * ackRandomFactor)
   let ctx = MessageContext { message = message
                            , srcEndpoint = srcEndpoint
                            , dstEndpoint = dstEndpoint }
   let messageState = MessageState { messageContext = ctx
-                                  , insertionTime = now }
+                                  , insertionTime = now
+                                  , replyTimeout = initialTimeout
+                                  , retransmitCount = 0}
   atomically (queueMessage messageState (outgoingMessages store))
 
 recvMessageWithCode :: MessageCode -> MessagingState -> IO MessageContext
