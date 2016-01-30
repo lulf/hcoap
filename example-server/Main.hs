@@ -1,4 +1,5 @@
 import Network.CoAP.Server
+import Network.CoAP.Transport
 import Network.Socket
 import qualified Data.ByteString.Char8 as B
 
@@ -22,5 +23,5 @@ main = do
   withSocketsDo $ do
     sock <- socket AF_INET6 Datagram defaultProtocol
     bindSocket sock (SockAddrInet6 12345 0 iN6ADDR_ANY 0)
-    runServer sock requestHandler
+    runServer (createUDPTransport sock) requestHandler
 

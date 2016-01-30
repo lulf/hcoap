@@ -12,8 +12,6 @@ import Control.Monad
 import Control.Monad.State.Lazy
 import Data.Maybe
 import Data.Ord
-import Network.Socket hiding (send, sendTo, recv, recvFrom)
-import qualified Network.Socket.ByteString as N
 import Data.ByteString (empty)
 import Control.Concurrent.STM
 import Control.Concurrent
@@ -41,15 +39,15 @@ data MessagingStore = MessagingStore { incomingMessages    :: TVar MessageList
                                      , outgoingMessages    :: TVar MessageList
                                      , unackedMessages     :: TVar MessageList 
                                      , unconfirmedMessages :: TVar MessageList }
-data MessagingState = MessagingState Socket MessagingStore
+data MessagingState = MessagingState Transport MessagingStore
 
-createMessagingState :: Socket -> IO MessagingState
-createMessagingState sock = do
+createMessagingState :: Transport -> IO MessagingState
+createMessagingState transport = do
   incoming <- newTVarIO []
   outgoing <- newTVarIO []
   unacked <- newTVarIO []
   unconfirmed <- newTVarIO []
-  return (MessagingState sock (MessagingStore incoming outgoing unacked unconfirmed))
+  return (MessagingState transport (MessagingStore incoming outgoing unacked unconfirmed))
 
 queueMessages :: [MessageState] -> TVar MessageList -> STM ()
 queueMessages messages msgListVar = do
@@ -144,10 +142,10 @@ takeMessageByIdAndOrigin msgId origin msgListVar = do
         return msg
 
 recvLoop :: MessagingState -> IO ()
-recvLoop state@(MessagingState sock store) = do
+recvLoop state@(MessagingState transport store) = do
   putStrLn "Waiting for UDP packet"
-  (msgData, srcEndpoint) <- N.recvFrom sock 65535
-  dstEndpoint <- getSocketName sock
+  (msgData, srcEndpoint) <- recvFrom transport
+  dstEndpoint <- localEndpoint transport
   now <- getCurrentTime
   let message = decode msgData
   let messageCtx = MessageContext { message = message
@@ -171,7 +169,7 @@ recvLoop state@(MessagingState sock store) = do
   recvLoop state
   
 sendLoop :: MessagingState -> IO ()
-sendLoop state@(MessagingState sock store) = do
+sendLoop state@(MessagingState transport store) = do
   putStrLn "Sending queued packets"
   msgState <- atomically (do
     msgState <- takeMessage (outgoingMessages store)
@@ -181,7 +179,7 @@ sendLoop state@(MessagingState sock store) = do
   let msgCtx = messageContext msgState
   let msgData = encode (message msgCtx)
   let origin = dstEndpoint msgCtx
-  _ <- N.sendTo sock msgData origin
+  _ <- sendTo transport msgData origin
   sendLoop state
 
 
@@ -212,7 +210,7 @@ ackTimeout :: Double
 ackTimeout = 2
 
 ackLoop :: MessagingState -> IO ()
-ackLoop state@(MessagingState sock store) = do
+ackLoop state@(MessagingState _ store) = do
   takeStamp <- getCurrentTime
   let nomTime = realToFrac (-ackTimeout)
   let oldestTime = addUTCTime nomTime takeStamp
@@ -243,7 +241,7 @@ adjustRetransmissionState now msgState =
                , retransmitCount = (retransmitCount msgState) + 1 }
 
 retransmitLoop :: MessagingState -> IO ()
-retransmitLoop state@(MessagingState sock store) = do
+retransmitLoop state@(MessagingState _ store) = do
   now <- getCurrentTime
   toRetransmit <- atomically (takeMessagesToRetransmit now (unconfirmedMessages store))
   if null toRetransmit
@@ -263,8 +261,8 @@ messagingLoop state = do
   retransmitLoop state
 
 sendMessage :: Message -> Endpoint -> MessagingState -> IO ()
-sendMessage message dstEndpoint (MessagingState sock store) = do
-  srcEndpoint <- getSocketName sock
+sendMessage message dstEndpoint (MessagingState transport store) = do
+  srcEndpoint <- localEndpoint transport
   now <- getCurrentTime
   initialTimeout <- randomRIO (ackTimeout, ackTimeout * ackRandomFactor)
   let ctx = MessageContext { message = message
@@ -277,7 +275,7 @@ sendMessage message dstEndpoint (MessagingState sock store) = do
   atomically (queueMessage messageState (outgoingMessages store))
 
 recvMessageWithCode :: MessageCode -> MessagingState -> IO MessageContext
-recvMessageWithCode msgCode (MessagingState sock store) = do
+recvMessageWithCode msgCode (MessagingState _ store) = do
   putStrLn "Fetching messages matching requests"
   msg <- atomically (do
     msgState <- takeMessageByCode msgCode (incomingMessages store)

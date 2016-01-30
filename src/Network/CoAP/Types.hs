@@ -7,6 +7,10 @@ import Data.Maybe
 import Network.Socket
 
 type Endpoint = SockAddr
+data Transport =
+  Transport { sendTo :: BS.ByteString -> Endpoint -> IO Int
+            , recvFrom :: IO (BS.ByteString, Endpoint)
+            , localEndpoint :: IO Endpoint }
 
 -- Supported media types in CoAP RFC
 data MediaType = TextPlain

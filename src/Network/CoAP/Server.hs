@@ -39,9 +39,9 @@ createResponse req code options payload =
                  , responseOptions = options
                  , responsePayload = payload }
 
-runServer :: Socket -> (Request -> IO Response) -> IO ()
-runServer sock requestHandler = do
-  state <- createMessagingState sock
+runServer :: Transport -> (Request -> IO Response) -> IO ()
+runServer transport requestHandler = do
+  state <- createMessagingState transport
   msgLoop <- forkIO (messagingLoop state) 
   requestLoop state requestHandler
 
