@@ -46,7 +46,8 @@ runServer transport requestHandler = do
   requestLoop state requestHandler
 
 createRequest :: MessageContext -> CoAPRequest
-createRequest reqCtx = CoAPRequest { requestMessage = message reqCtx
+createRequest reqCtx =
+    CoAPRequest { requestMessage = message reqCtx
                                    , requestOrigin = srcEndpoint reqCtx
                                    , requestDestination = dstEndpoint reqCtx }
 

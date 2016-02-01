@@ -10,7 +10,6 @@ import Network.CoAP.MessageCodec
 import Data.List (deleteBy, find, partition, filter, minimumBy, delete, sortBy)
 import Control.Monad
 import Control.Monad.State.Lazy
-import Data.Maybe
 import Data.Ord
 import Data.ByteString (empty)
 import Control.Concurrent.STM
@@ -27,8 +26,8 @@ data MessageState = MessageState { messageContext  :: MessageContext
                                  , retransmitCount :: Integer } deriving (Show)
 
 cmpMessageState a b =
-  ((messageId (messageHeader (message (messageContext a)))) == (messageId (messageHeader (message (messageContext b))))) &&
-  ((srcEndpoint (messageContext a)) == (srcEndpoint (messageContext b)))
+  messageId (messageHeader (message (messageContext a))) == messageId (messageHeader (message (messageContext b))) &&
+  srcEndpoint (messageContext a) == srcEndpoint (messageContext b)
 
 instance Eq MessageState where
   (==) = cmpMessageState
@@ -74,7 +73,7 @@ takeMessagesOlderThan timeStamp msgListVar = do
   if null msgList
   then retry
   else do
-    let (oldMessages, remainingMessages) = partition (\x -> timeStamp > (insertionTime x)) msgList
+    let (oldMessages, remainingMessages) = partition (\x -> timeStamp > insertionTime x) msgList
     writeTVar msgListVar remainingMessages
     return oldMessages
 
@@ -108,7 +107,7 @@ takeMessageByCode msgCode msgListVar = do
   then retry
   else do
     let sortedMsgList = sortBy (comparing insertionTime) msgList
-    let msg = find (\x -> cmpMessageCode msgCode (messageCode (messageHeader (message (messageContext x))))) sortedMsgList
+    let msg = find (cmpMessageCode msgCode . messageCode . messageHeader . message . messageContext x) sortedMsgList
     case msg of
       Nothing -> retry
       Just m -> do
@@ -158,7 +157,7 @@ recvLoop state@(MessagingState transport store) = do
   let msgId = messageId (messageHeader message)
   let msgType = messageType (messageHeader message)
   when (msgType == ACK) (do
-    putStrLn ("Received ACK, deleting from outgoing messages")
+    putStrLn "Received ACK, deleting from outgoing messages"
     _ <- atomically (takeMessageByIdAndOrigin msgId srcEndpoint (unconfirmedMessages store))
     return ())
   let msgCode = messageCode (messageHeader message)
@@ -214,8 +213,7 @@ ackLoop state@(MessagingState _ store) = do
   takeStamp <- getCurrentTime
   let nomTime = realToFrac (-ackTimeout)
   let oldestTime = addUTCTime nomTime takeStamp
-  oldMessages <- atomically (do
-    takeMessagesOlderThan oldestTime (unackedMessages store))
+  oldMessages <- atomically (takeMessagesOlderThan oldestTime (unackedMessages store))
   if null oldMessages
   then do
     threadDelay 100000
@@ -237,8 +235,8 @@ adjustRetransmissionState :: TimeStamp -> MessageState -> MessageState
 adjustRetransmissionState now msgState =
   MessageState { messageContext = messageContext msgState
                , insertionTime = now
-               , replyTimeout = (replyTimeout msgState) * 2
-               , retransmitCount = (retransmitCount msgState) + 1 }
+               , replyTimeout = replyTimeout msgState * 2
+               , retransmitCount = retransmitCount msgState + 1 }
 
 retransmitLoop :: MessagingState -> IO ()
 retransmitLoop state@(MessagingState _ store) = do
@@ -247,8 +245,8 @@ retransmitLoop state@(MessagingState _ store) = do
   if null toRetransmit
   then threadDelay 100000
   else (do
-    putStrLn ("Attempting to retransmit messages")
-    let adjustedMessages = filter (\s -> (retransmitCount s) <= maxRetransmitCount) (map (adjustRetransmissionState now) toRetransmit)
+    putStrLn "Attempting to retransmit messages"
+    let adjustedMessages = filter (\s -> retransmitCount s <= maxRetransmitCount) (map (adjustRetransmissionState now) toRetransmit)
     atomically (queueMessages adjustedMessages (outgoingMessages store)))
   retransmitLoop state
   
@@ -277,13 +275,12 @@ sendMessage message dstEndpoint (MessagingState transport store) = do
 recvMessageWithCode :: MessageCode -> MessagingState -> IO MessageContext
 recvMessageWithCode msgCode (MessagingState _ store) = do
   putStrLn "Fetching messages matching requests"
-  msg <- atomically (do
+  atomically (do
     msgState <- takeMessageByCode msgCode (incomingMessages store)
     let msgCtx = messageContext msgState
     let msgType = messageType (messageHeader (message msgCtx))
     when (msgType == CON) (queueMessage msgState (unackedMessages store))
     return msgCtx)
-  return msg
 
 recvRequest :: MessagingState -> IO MessageContext
 recvRequest = recvMessageWithCode (CodeRequest GET)
