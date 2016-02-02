@@ -69,15 +69,18 @@ takeMessage msgListVar = do
     writeTVar msgListVar newMsgList
     return message
 
-takeMessagesOlderThan :: TimeStamp -> TVar MessageList -> STM [MessageState]
-takeMessagesOlderThan timeStamp msgListVar = do
+takeMessagesRetryMatching :: (MessageState -> Bool) -> TVar MessageList -> STM [MessageState]
+takeMessagesRetryMatching msgFilter msgListVar = do
   msgList <- readTVar msgListVar
   if null msgList
   then retry
   else do
-    let (oldMessages, remainingMessages) = partition (\x -> timeStamp > insertionTime x) msgList
+    let (matchedMessages, remainingMessages) = partition msgFilter msgList
     writeTVar msgListVar remainingMessages
-    return oldMessages
+    return matchedMessages
+
+takeMessagesOlderThan :: TimeStamp -> TVar MessageList -> STM [MessageState]
+takeMessagesOlderThan timeStamp = takeMessagesRetryMatching (\x -> timeStamp > insertionTime x)
 
 checkRetransmit :: TimeStamp -> MessageState -> Bool
 checkRetransmit now msgState =
@@ -87,14 +90,7 @@ checkRetransmit now msgState =
    in now > endTime
 
 takeMessagesToRetransmit :: TimeStamp -> TVar MessageList -> STM [MessageState]
-takeMessagesToRetransmit now msgListVar = do
-  msgList <- readTVar msgListVar
-  if null msgList
-  then retry
-  else do
-    let (retransmitMessages, remainingMessages) = partition (checkRetransmit now) msgList
-    writeTVar msgListVar remainingMessages
-    return retransmitMessages
+takeMessagesToRetransmit now = takeMessagesRetryMatching (checkRetransmit now)
 
 cmpMessageCode :: MessageCode -> MessageCode -> Bool
 cmpMessageCode (CodeRequest _) (CodeRequest _) = True
