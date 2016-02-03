@@ -15,6 +15,7 @@ main = do
     bindSocket sock (SockAddrInet6 12345 0 iN6ADDR_ANY 0)
     let transport = createUDPTransport sock
     let dest = SockAddrInet6 5683 0 (0, 0, 0, 0) 0
-    response <- doRequest transport dest request
+    client <- createClient transport
+    response <- doRequest client dest request
     putStrLn ("Got response: " ++ show response)
     return ()

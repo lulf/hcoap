@@ -5,7 +5,8 @@ module Network.CoAP.Client
 , T.ResponseCode(..)
 , T.Option(..)
 , T.MediaType(..)
-, doRequest
+, Client(..)
+, createClient
 ) where
 
 import Network.CoAP.Messaging
@@ -28,7 +29,15 @@ data Request =
           , requestPayload :: Maybe T.Payload
           , requestReliable :: Bool } deriving (Show)
                     
+data Client = Client { doRequest :: T.Endpoint -> Request -> IO Response
+                     , msgThreadId :: ThreadId }
 
+createClient :: T.Transport -> IO Client
+createClient transport = do
+  state <- createMessagingState transport
+  msgThread <- forkIO (messagingLoop state)
+  return Client { doRequest = doRequestInternal state
+                , msgThreadId = msgThread }
 
 generateToken :: Int -> IO [Word8]
 generateToken 0 = return []
@@ -37,10 +46,8 @@ generateToken len = do
   next <- generateToken (len - 1)
   return (tkn:next)
 
-doRequest :: T.Transport -> T.Endpoint -> Request -> IO Response
-doRequest transport dest (Request method options payload reliable) = do
-  state <- createMessagingState transport
-  msgThread <- forkIO (messagingLoop state)
+doRequestInternal :: MessagingState -> T.Endpoint -> Request -> IO Response
+doRequestInternal state dest (Request method options payload reliable) = do
   let header = T.MessageHeader { T.messageVersion = 1
                                , T.messageType = if reliable then T.CON else T.NON
                                , T.messageCode = T.CodeRequest method

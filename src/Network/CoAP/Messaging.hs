@@ -170,8 +170,10 @@ recvLoop state@(MessagingState transport store) = do
   let msgId = messageId (messageHeader message)
   let msgType = messageType (messageHeader message)
   when (msgType == ACK) (do
-    {-putStrLn "Received ACK, deleting from outgoing messages"-}
+    {-unconf <- atomically (readTVar (unconfirmedMessages store))-}
+    {-putStrLn ("Received ACK, deleting from outgoing messages with id " ++ show msgId ++ " in unconfirmed: " ++ show unconf)-}
     _ <- atomically (takeMessageByIdAndOrigin msgId srcEndpoint (unconfirmedMessages store))
+    {-putStrLn ("Removed msg " ++ (show st) ++ " to endpoint " ++ (show srcEndpoint) ++ " from unconfirmed queue")-}
     return ())
   let msgCode = messageCode (messageHeader message)
   when (msgCode /= CodeEmpty) (do
@@ -188,6 +190,8 @@ sendLoop state@(MessagingState transport store) = do
     let msgType = messageType (messageHeader (message (messageContext msgState)))
     when (msgType == CON) (queueMessage msgState (unconfirmedMessages store))
     return msgState)
+  {-unconf <- atomically (readTVar (unconfirmedMessages store))-}
+  {-putStrLn ("On sending, unconfirmed is " ++ show unconf)-}
   let msgCtx = messageContext msgState
   let msgData = encode (message msgCtx)
   let origin = dstEndpoint msgCtx
@@ -258,7 +262,7 @@ retransmitLoop state@(MessagingState _ store) = do
   if null toRetransmit
   then threadDelay 100000
   else (do
-    putStrLn "Attempting to retransmit messages"
+    putStrLn ("Attempting to retransmit messages " ++ show toRetransmit)
     let adjustedMessages = filter (\s -> retransmitCount s <= maxRetransmitCount) (map (adjustRetransmissionState now) toRetransmit)
     atomically (queueMessages adjustedMessages (outgoingMessages store)))
   retransmitLoop state
@@ -276,6 +280,7 @@ sendMessage message dstEndpoint (MessagingState transport store) = do
   srcEndpoint <- localEndpoint transport
   now <- getCurrentTime
   initialTimeout <- randomRIO (ackTimeout, ackTimeout * ackRandomFactor)
+  {-putStrLn ("Queueing message " ++ (show message) ++ " for sending")-}
   let ctx = MessageContext { message = message
                            , srcEndpoint = srcEndpoint
                            , dstEndpoint = dstEndpoint }

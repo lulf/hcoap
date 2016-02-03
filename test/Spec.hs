@@ -19,8 +19,8 @@ data Cluster = Cluster Transport Transport
 tests = TestList [TestLabel "testReliability" testReliability]
 
 sendToChan prob chan msg endpoint = do
-  putStrLn ("Attempting to send message to " ++ (show endpoint) ++ " with prob " ++ show prob)
   v <- randomRIO(0, 1)
+  when (v >= prob) (putStrLn ("Message to to " ++ (show endpoint) ++ " dropped!"))
   when (v < prob) (writeChan chan msg)
   return (length msg)
 
@@ -45,8 +45,8 @@ instance Arbitrary C.Request where
 
 testReliability =
   TestCase (do
-    linkAProb <- randomRIO(1, 1)
-    linkBProb <- randomRIO(1, 1)
+    linkAProb <- randomRIO(0.7, 1)
+    linkBProb <- randomRIO(0.7, 1)
     chanA <- newChan
     chanB <- newChan
     let endpointA = SockAddrUnix "A"
@@ -54,12 +54,13 @@ testReliability =
     let transportA = createUnstableTransport linkAProb (endpointA, chanA) (endpointB, chanB)
     let transportB = createUnstableTransport linkBProb (endpointB, chanB) (endpointA, chanA)
     serverThread <- forkIO (S.runServer transportA testHandler)
-    
-    reqs <- generate (vector 2)
+    client <- C.createClient transportB 
+    reqs <- generate (vector 10)
     mapM_ (\req -> do
-      response <- timeout 200000000 (C.doRequest transportB endpointA req)
+      response <- timeout 20000000 (C.doRequest client endpointA req)
       assertBool ("Timed out waiting for response on reliable request " ++ show req) (isJust response)
       let res = fromJust response
+      putStrLn "Got response, checking"
       assertEqual "Bad response code" C.Created (C.responseCode res)
       assertEqual "Bad payload" "Hello, Client" (unpack (fromJust (C.responsePayload res)))
       ) reqs)
