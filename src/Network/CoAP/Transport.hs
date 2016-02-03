@@ -1,5 +1,7 @@
 module Network.CoAP.Transport
 ( createUDPTransport
+, Endpoint(..)
+, Transport(..)
 ) where
 
 import Network.CoAP.Types

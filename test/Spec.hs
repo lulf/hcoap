@@ -1,27 +1,68 @@
 import Network.CoAP.Message
+import qualified Network.CoAP.Server as S
+import qualified Network.CoAP.Client as C
+import Network.CoAP.Transport
+import Network.Socket hiding (sendTo, recvFrom)
 import Test.HUnit
-import Data.ByteString hiding (putStrLn)
+import Data.ByteString.Char8 hiding (putStrLn)
 import Test.QuickCheck
 import Prelude hiding (null, length)
+import Control.Concurrent.Chan
+import Control.Concurrent
+import Control.Monad
+import System.Random
+import System.Timeout
+import Data.Maybe
 
-tests = TestList [TestLabel "testEncodeDecode" testEncodeDecode]
+data Cluster = Cluster Transport Transport
 
-testEncodeDecode =
+tests = TestList [TestLabel "testReliability" testReliability]
+
+sendToChan prob chan msg endpoint = do
+  putStrLn ("Attempting to send message to " ++ (show endpoint) ++ " with prob " ++ show prob)
+  v <- randomRIO(0, 1)
+  when (v < prob) (writeChan chan msg)
+  return (length msg)
+
+createUnstableTransport :: Double -> (Endpoint, Chan ByteString) -> (Endpoint, Chan ByteString) -> Transport
+createUnstableTransport prob (localE, localC) (remoteE, remoteC) =
+  Transport { sendTo = sendToChan prob remoteC
+            , recvFrom = do
+                d <- readChan localC
+                return (d, remoteE)
+            , localEndpoint = return localE }
+
+testHandler :: S.Request -> IO S.Response
+testHandler req = return (S.createResponse req S.Created [] (Just (pack "Hello, Client")))
+
+instance Arbitrary C.Request where
+  arbitrary = do
+    pload <- arbitrary
+    return (C.Request { C.requestMethod = GET
+                      , C.requestOptions = []
+                      , C.requestPayload = pload
+                      , C.requestReliable = True })
+
+testReliability =
   TestCase (do
-    let hdr = MessageHeader { messageVersion = 1
-                            , messageType = RST 
-                            , messageCode = CodeRequest PUT
-                            , messageId = 1 }
-    let msg = Message { messageHeader = hdr
-                      , messageToken = empty
-                      , messageOptions = [ContentFormat TextPlain]
-                      , messagePayload = Nothing }
-      
-    let encoded = encode msg
-    let decoded = decode encoded
+    linkAProb <- randomRIO(1, 1)
+    linkBProb <- randomRIO(1, 1)
+    chanA <- newChan
+    chanB <- newChan
+    let endpointA = SockAddrUnix "A"
+    let endpointB = SockAddrUnix "B"
+    let transportA = createUnstableTransport linkAProb (endpointA, chanA) (endpointB, chanB)
+    let transportB = createUnstableTransport linkBProb (endpointB, chanB) (endpointA, chanA)
+    serverThread <- forkIO (S.runServer transportA testHandler)
     
-    assertEqual "Decoded message not same as original" (show msg) (show decoded)
-    )
+    reqs <- generate (vector 2)
+    mapM_ (\req -> do
+      response <- timeout 200000000 (C.doRequest transportB endpointA req)
+      assertBool ("Timed out waiting for response on reliable request " ++ show req) (isJust response)
+      let res = fromJust response
+      assertEqual "Bad response code" C.Created (C.responseCode res)
+      assertEqual "Bad payload" "Hello, Client" (unpack (fromJust (C.responsePayload res)))
+      ) reqs)
 
 -- TODO, negative tests:
 -- * Invalid token length
