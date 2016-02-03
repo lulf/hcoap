@@ -155,7 +155,7 @@ takeMessageByIdAndOrigin msgId origin msgListVar = do
 
 recvLoop :: MessagingState -> IO ()
 recvLoop state@(MessagingState transport store) = do
-  putStrLn "Waiting for UDP packet"
+  {-putStrLn "Waiting for UDP packet"-}
   (msgData, srcEndpoint) <- recvFrom transport
   dstEndpoint <- localEndpoint transport
   now <- getCurrentTime
@@ -170,19 +170,19 @@ recvLoop state@(MessagingState transport store) = do
   let msgId = messageId (messageHeader message)
   let msgType = messageType (messageHeader message)
   when (msgType == ACK) (do
-    putStrLn "Received ACK, deleting from outgoing messages"
+    {-putStrLn "Received ACK, deleting from outgoing messages"-}
     _ <- atomically (takeMessageByIdAndOrigin msgId srcEndpoint (unconfirmedMessages store))
     return ())
   let msgCode = messageCode (messageHeader message)
   when (msgCode /= CodeEmpty) (do
-    putStrLn "Received non-empty message, queuing incoming"
+    {-putStrLn "Received non-empty message, queuing incoming"-}
     _ <- atomically (queueMessage messageState (incomingMessages store))
     return ())
   recvLoop state
   
 sendLoop :: MessagingState -> IO ()
 sendLoop state@(MessagingState transport store) = do
-  putStrLn "Sending queued packets"
+  {-putStrLn "Sending queued packets"-}
   msgState <- atomically (do
     msgState <- takeMessage (outgoingMessages store)
     let msgType = messageType (messageHeader (message (messageContext msgState)))
@@ -305,7 +305,7 @@ recvMessageWithCodeAndToken msgCode token (MessagingState _ store) =
 
 recvRequest :: MessagingState -> IO MessageContext
 recvRequest state = do
-  putStrLn "Fetching messages matching requests"
+  {-putStrLn "Fetching messages matching requests"-}
   recvMessageWithCode (CodeRequest GET) state
 
 createAckResponse :: Message -> Message
@@ -367,5 +367,5 @@ sendRequest (Message (MessageHeader msgVersion msgType msgCode _) tkn opts paylo
 
 recvResponse :: Message -> Endpoint -> MessagingState -> IO MessageContext
 recvResponse reqMessage endpoint state = do
-  putStrLn "Receiving response"
+  {-putStrLn "Receiving response"-}
   recvMessageWithCodeAndToken (CodeResponse Created) (messageToken reqMessage) state
