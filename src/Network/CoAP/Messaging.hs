@@ -58,8 +58,8 @@ queueMessages messages msgListVar = do
 queueMessage :: MessageState -> TVar MessageList -> STM ()
 queueMessage message = queueMessages [message]
 
-takeMessage :: TVar MessageList -> STM MessageState
-takeMessage msgListVar = do
+takeMessageRetry :: TVar MessageList -> STM MessageState
+takeMessageRetry msgListVar = do
   msgList <- readTVar msgListVar
   if null msgList
   then retry
@@ -117,7 +117,7 @@ takeMessageByCode :: MessageCode -> TVar MessageList -> STM MessageState
 takeMessageByCode msgCode = takeMessageRetryMatching (cmpMessageCode msgCode . messageCode . messageHeader . message . messageContext)
 
 takeMessageByCodeAndToken :: MessageCode -> Token -> TVar MessageList -> STM MessageState
-takeMessageByCodeAndToken msgCode token = takeMessageRetryMatching (\x -> (cmpMessageCode msgCode (messageCode (messageHeader (message (messageContext x))))) && token == messageToken (message (messageContext x)))
+takeMessageByCodeAndToken msgCode token = takeMessageRetryMatching (\x -> cmpMessageCode msgCode (messageCode (messageHeader (message (messageContext x)))) && token == messageToken (message (messageContext x)))
 
 takeMessageMatching :: (MessageState -> Bool) -> TVar MessageList -> STM (Maybe MessageState)
 takeMessageMatching matchFilter msgListVar = do
@@ -169,7 +169,7 @@ sendLoop :: MessagingState -> IO ()
 sendLoop state@(MessagingState transport store) = do
   {-putStrLn "Sending queued packets"-}
   msgState <- atomically (do
-    msgState <- takeMessage (outgoingMessages store)
+    msgState <- takeMessageRetry (outgoingMessages store)
     let msgType = messageType (messageHeader (message (messageContext msgState)))
     when (msgType == CON) (queueMessage msgState (unconfirmedMessages store))
     return msgState)
