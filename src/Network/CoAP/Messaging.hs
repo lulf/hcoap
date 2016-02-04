@@ -92,12 +92,6 @@ checkRetransmit now msgState =
 takeMessagesToRetransmit :: TimeStamp -> TVar MessageList -> STM [MessageState]
 takeMessagesToRetransmit now = takeMessagesRetryMatching (checkRetransmit now)
 
-cmpMessageCode :: MessageCode -> MessageCode -> Bool
-cmpMessageCode (CodeRequest _) (CodeRequest _) = True
-cmpMessageCode (CodeResponse _) (CodeResponse _) = True
-cmpMessageCode CodeEmpty CodeEmpty = True
-cmpMessageCode _ _ = False
-
 takeMessageRetryMatching :: (MessageState -> Bool) -> TVar MessageList -> STM MessageState
 takeMessageRetryMatching matchFilter msgListVar = do
   msgList <- readTVar msgListVar
@@ -112,12 +106,6 @@ takeMessageRetryMatching matchFilter msgListVar = do
         let newMsgList = delete m msgList
         writeTVar msgListVar newMsgList
         return m
-
-takeMessageByCode :: MessageCode -> TVar MessageList -> STM MessageState
-takeMessageByCode msgCode = takeMessageRetryMatching (cmpMessageCode msgCode . messageCode . messageHeader . message . messageContext)
-
-takeMessageByCodeAndToken :: MessageCode -> Token -> TVar MessageList -> STM MessageState
-takeMessageByCodeAndToken msgCode token = takeMessageRetryMatching (\x -> cmpMessageCode msgCode (messageCode (messageHeader (message (messageContext x)))) && token == messageToken (message (messageContext x)))
 
 takeMessageMatching :: (MessageState -> Bool) -> TVar MessageList -> STM (Maybe MessageState)
 takeMessageMatching matchFilter msgListVar = do
@@ -266,28 +254,23 @@ sendMessage message dstEndpoint (MessagingState transport store) = do
                                   , retransmitCount = 0}
   atomically (queueMessage messageState (outgoingMessages store))
 
-recvMessageWithCode :: MessageCode -> MessagingState -> IO MessageContext
-recvMessageWithCode msgCode (MessagingState _ store) =
-  atomically (do
-    msgState <- takeMessageByCode msgCode (incomingMessages store)
-    let msgCtx = messageContext msgState
-    let msgType = messageType (messageHeader (message msgCtx))
-    when (msgType == CON) (queueMessage msgState (unackedMessages store))
-    return msgCtx)
+recvMessageMatching :: (MessageState -> Bool) -> MessagingState -> STM MessageContext
+recvMessageMatching matchFilter (MessagingState _ store) = do
+  msgState <- takeMessageRetryMatching matchFilter (incomingMessages store)
+  let msgCtx = messageContext msgState
+  let msgType = messageType (messageHeader (message msgCtx))
+  when (msgType == CON) (queueMessage msgState (unackedMessages store))
+  return msgCtx
 
-recvMessageWithCodeAndToken :: MessageCode -> Token -> MessagingState -> IO MessageContext
-recvMessageWithCodeAndToken msgCode token (MessagingState _ store) =
-  atomically (do
-    msgState <- takeMessageByCodeAndToken msgCode token (incomingMessages store)
-    let msgCtx = messageContext msgState
-    let msgType = messageType (messageHeader (message msgCtx))
-    when (msgType == CON) (queueMessage msgState (unackedMessages store))
-    return msgCtx)
 
-recvRequest :: MessagingState -> IO MessageContext
-recvRequest state = do
-  {-putStrLn "Fetching messages matching requests"-}
-  recvMessageWithCode (CodeRequest GET) state
+cmpMessageCode :: MessageCode -> MessageCode -> Bool
+cmpMessageCode (CodeRequest _) (CodeRequest _) = True
+cmpMessageCode (CodeResponse _) (CodeResponse _) = True
+cmpMessageCode CodeEmpty CodeEmpty = True
+cmpMessageCode _ _ = False
+
+recvRequest :: MessagingState -> STM MessageContext
+recvRequest = recvMessageMatching (cmpMessageCode (CodeRequest GET) . messageCode . messageHeader . message . messageContext)
 
 createAckResponse :: Message -> Message
 createAckResponse response =
@@ -346,7 +329,7 @@ sendRequest (Message (MessageHeader msgVersion msgType msgCode _) tkn opts paylo
                     , messagePayload = payload }
   sendMessage msg msgdest state
 
-recvResponse :: Message -> Endpoint -> MessagingState -> IO MessageContext
-recvResponse reqMessage endpoint state = do
-  {-putStrLn "Receiving response"-}
-  recvMessageWithCodeAndToken (CodeResponse Created) (messageToken reqMessage) state
+recvResponse :: Message -> Endpoint -> MessagingState -> STM MessageContext
+recvResponse reqMessage endpoint = recvMessageMatching matchFilter
+  where matchFilter x = cmpMessageCode (CodeResponse Created) (messageCode (messageHeader (message (messageContext x)))) && messageToken reqMessage == messageToken (message (messageContext x))
+

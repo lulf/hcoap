@@ -16,6 +16,7 @@ module Network.CoAP.Server
 import Network.CoAP.Messaging
 import Network.CoAP.Types
 import Control.Concurrent
+import Control.Concurrent.STM
 import Network.Socket
 
 type Request = CoAPRequest
@@ -54,7 +55,7 @@ createRequest reqCtx =
 requestLoop :: MessagingState -> (Request -> IO Response) -> IO ()
 requestLoop state requestHandler = do
   {-putStrLn "Waiting for incoming message"-}
-  requestCtx <- recvRequest state
+  requestCtx <- atomically (recvRequest state)
   let request = createRequest requestCtx
   {-putStrLn ("Received request: " ++ (show request))-}
   response <- requestHandler request

@@ -13,6 +13,7 @@ import Network.CoAP.Messaging
 import qualified Network.CoAP.Types as T
 import Control.Monad.State
 import Control.Concurrent
+import Control.Concurrent.STM
 import Network.Socket
 import Data.ByteString
 import Data.Word
@@ -59,7 +60,7 @@ doRequestInternal state dest (Request method options payload reliable) = do
                       , T.messageOptions = options
                       , T.messagePayload = payload }
   sendRequest msg dest state
-  responseCtx <- recvResponse msg dest state
+  responseCtx <- atomically (recvResponse msg dest state)
   let (T.Message (T.MessageHeader _ _ (T.CodeResponse rCode) _) _ opts pload) = T.message responseCtx
   return Response { responseCode = rCode
                   , responseOptions = opts
