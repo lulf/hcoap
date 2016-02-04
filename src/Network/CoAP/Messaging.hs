@@ -152,29 +152,22 @@ recvLoop state@(MessagingState transport store) = do
                                   , retransmitCount = 0 }
   let msgId = messageId (messageHeader message)
   let msgType = messageType (messageHeader message)
-  when (msgType == ACK) (do
-    {-unconf <- atomically (readTVar (unconfirmedMessages store))-}
-    {-putStrLn ("Received ACK, deleting from outgoing messages with id " ++ show msgId ++ " in unconfirmed: " ++ show unconf)-}
-    _ <- atomically (takeMessageByIdAndOrigin msgId srcEndpoint (unconfirmedMessages store))
-    {-putStrLn ("Removed msg " ++ (show st) ++ " to endpoint " ++ (show srcEndpoint) ++ " from unconfirmed queue")-}
-    return ())
   let msgCode = messageCode (messageHeader message)
-  when (msgCode /= CodeEmpty) (do
-    {-putStrLn "Received non-empty message, queuing incoming"-}
-    _ <- atomically (queueMessage messageState (incomingMessages store))
+  atomically (do
+    -- This is a bit clumsy
+    when (msgType == ACK) (do _ <- takeMessageByIdAndOrigin msgId srcEndpoint (unconfirmedMessages store)
+                              return ())
+    when (msgCode /= CodeEmpty) (queueMessage messageState (incomingMessages store))
     return ())
   recvLoop state
   
 sendLoop :: MessagingState -> IO ()
 sendLoop state@(MessagingState transport store) = do
-  {-putStrLn "Sending queued packets"-}
   msgState <- atomically (do
     msgState <- takeMessageRetry (outgoingMessages store)
     let msgType = messageType (messageHeader (message (messageContext msgState)))
     when (msgType == CON) (queueMessage msgState (unconfirmedMessages store))
     return msgState)
-  {-unconf <- atomically (readTVar (unconfirmedMessages store))-}
-  {-putStrLn ("On sending, unconfirmed is " ++ show unconf)-}
   let msgCtx = messageContext msgState
   let msgData = encode (message msgCtx)
   let origin = dstEndpoint msgCtx
