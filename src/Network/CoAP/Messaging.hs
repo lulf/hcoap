@@ -98,60 +98,43 @@ cmpMessageCode (CodeResponse _) (CodeResponse _) = True
 cmpMessageCode CodeEmpty CodeEmpty = True
 cmpMessageCode _ _ = False
 
-takeMessageByCode :: MessageCode -> TVar MessageList -> STM MessageState
-takeMessageByCode msgCode msgListVar = do
+takeMessageRetryMatching :: (MessageState -> Bool) -> TVar MessageList -> STM MessageState
+takeMessageRetryMatching matchFilter msgListVar = do
   msgList <- readTVar msgListVar
   if null msgList
   then retry
   else do
     let sortedMsgList = sortBy (comparing insertionTime) msgList
-    let msg = find (cmpMessageCode msgCode . messageCode . messageHeader . message . messageContext) sortedMsgList
+    let msg = find matchFilter sortedMsgList
     case msg of
       Nothing -> retry
       Just m -> do
         let newMsgList = delete m msgList
         writeTVar msgListVar newMsgList
         return m
+
+takeMessageByCode :: MessageCode -> TVar MessageList -> STM MessageState
+takeMessageByCode msgCode = takeMessageRetryMatching (cmpMessageCode msgCode . messageCode . messageHeader . message . messageContext)
 
 takeMessageByCodeAndToken :: MessageCode -> Token -> TVar MessageList -> STM MessageState
-takeMessageByCodeAndToken msgCode token msgListVar = do
-  msgList <- readTVar msgListVar
-  if null msgList
-  then retry
-  else do
-    let sortedMsgList = sortBy (comparing insertionTime) msgList
-    let msg = find (\x -> (cmpMessageCode msgCode (messageCode (messageHeader (message (messageContext x))))) && token == messageToken (message (messageContext x))) sortedMsgList
-    case msg of
-      Nothing -> retry
-      Just m -> do
-        let newMsgList = delete m msgList
-        writeTVar msgListVar newMsgList
-        return m
+takeMessageByCodeAndToken msgCode token = takeMessageRetryMatching (\x -> (cmpMessageCode msgCode (messageCode (messageHeader (message (messageContext x))))) && token == messageToken (message (messageContext x)))
 
-takeMessageByToken :: Token -> TVar MessageList -> STM (Maybe MessageState)
-takeMessageByToken token msgListVar = do
+takeMessageMatching :: (MessageState -> Bool) -> TVar MessageList -> STM (Maybe MessageState)
+takeMessageMatching matchFilter msgListVar = do
   msgList <- readTVar msgListVar
   if null msgList
   then return Nothing
   else do
     let sortedMsgList = sortBy (comparing insertionTime) msgList
-    let (foundMessages, remainingMessages) = partition (\x -> token == messageToken (message (messageContext x))) sortedMsgList
+    let (foundMessages, remainingMessages) = partition matchFilter sortedMsgList
     writeTVar msgListVar remainingMessages
     return (listToMaybe foundMessages)
 
+takeMessageByToken :: Token -> TVar MessageList -> STM (Maybe MessageState)
+takeMessageByToken token = takeMessageMatching (\x -> token == messageToken (message (messageContext x)))
+
 takeMessageByIdAndOrigin :: MessageId -> Endpoint -> TVar MessageList -> STM (Maybe MessageState)
-takeMessageByIdAndOrigin msgId origin msgListVar = do
-  msgList <- readTVar msgListVar
-  if null msgList
-  then return Nothing
-  else do
-    let msg = find (\x -> (origin == dstEndpoint (messageContext x)) && (msgId == messageId (messageHeader (message (messageContext x))))) msgList
-    case msg of
-      Nothing -> return Nothing
-      Just m -> do
-        let newMsgList = delete m msgList
-        writeTVar msgListVar newMsgList
-        return msg
+takeMessageByIdAndOrigin msgId origin = takeMessageMatching (\x -> (origin == dstEndpoint (messageContext x)) && (msgId == messageId (messageHeader (message (messageContext x)))))
 
 recvLoop :: MessagingState -> IO ()
 recvLoop state@(MessagingState transport store) = do
