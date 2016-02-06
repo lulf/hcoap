@@ -11,15 +11,15 @@ findPath (option:options) =
     _             -> findPath options
 
 requestHandler :: RequestHandler
-requestHandler request = do
+requestHandler (request, _) = do
   let options = requestOptions request
   let path = findPath options
-  let payload = Just (B.pack ("{\"path\":\"" ++ (B.unpack path) ++ "\"}"))
-  return (Response Content [(ContentFormat ApplicationJson)] payload)
+  let payload = Just (B.pack ("{\"path\":\"" ++ B.unpack path ++ "\"}"))
+  return (Response Content [ContentFormat ApplicationJson] payload)
               
 
 main :: IO ()
-main = do
+main =
   withSocketsDo $ do
     sock <- socket AF_INET6 Datagram defaultProtocol
     bindSocket sock (SockAddrInet6 12345 0 iN6ADDR_ANY 0)

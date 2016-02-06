@@ -17,7 +17,7 @@ import Control.Concurrent.Async
 import Control.Concurrent.STM
 import Network.Socket
 
-type RequestHandler = (Request -> IO Response)
+type RequestHandler = (Request, Endpoint) -> IO Response
 
 data Server = Server { runServer :: IO ()
                      , msgThreadId :: Async () }
@@ -47,7 +47,7 @@ handleRequest requestCtx requestHandler state = do
   -- TODO: Add timeout
   let request = createRequest requestCtx
   {-putStrLn ("Received request: " ++ (show request))-}
-  response <- requestHandler request
+  response <- requestHandler (request, srcEndpoint requestCtx)
   {-putStrLn ("Produced response: " ++ (show response))-}
   let responseMsg = createResponseMessage (message requestCtx) response
   sendResponse requestCtx responseMsg state

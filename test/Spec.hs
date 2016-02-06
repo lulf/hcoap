@@ -32,8 +32,8 @@ createUnstableTransport prob (localE, localC) (remoteE, remoteC) =
                 return (d, remoteE)
             , localEndpoint = return localE }
 
-testHandler :: S.Request -> IO S.Response
-testHandler req = return (S.Response S.Created [] (Just (pack "Hello, Client")))
+testHandler :: S.RequestHandler
+testHandler (req, _) = return (S.Response S.Created [] (Just (pack "Hello, Client")))
 
 instance Arbitrary C.Request where
   arbitrary = do
