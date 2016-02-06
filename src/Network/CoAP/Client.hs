@@ -12,7 +12,7 @@ module Network.CoAP.Client
 import Network.CoAP.Messaging
 import qualified Network.CoAP.Types as T
 import Control.Monad.State
-import Control.Concurrent
+import Control.Concurrent.Async
 import Control.Concurrent.STM
 import Network.Socket
 import Data.ByteString
@@ -31,12 +31,12 @@ data Request =
           , requestReliable :: Bool } deriving (Show)
                     
 data Client = Client { doRequest :: T.Endpoint -> Request -> IO Response
-                     , msgThreadId :: ThreadId }
+                     , msgThreadId :: Async ()}
 
 createClient :: T.Transport -> IO Client
 createClient transport = do
   state <- createMessagingState transport
-  msgThread <- forkIO (messagingLoop state)
+  msgThread <- async (messagingLoop state)
   return Client { doRequest = doRequestInternal state
                 , msgThreadId = msgThread }
 

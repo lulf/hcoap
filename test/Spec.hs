@@ -53,7 +53,8 @@ testReliability =
     let endpointB = SockAddrUnix "B"
     let transportA = createUnstableTransport linkAProb (endpointA, chanA) (endpointB, chanB)
     let transportB = createUnstableTransport linkBProb (endpointB, chanB) (endpointA, chanA)
-    serverThread <- forkIO (S.runServer transportA testHandler)
+    server <- S.createServer transportA testHandler
+    serverThread <- forkIO (S.runServer server)
     client <- C.createClient transportB 
     reqs <- generate (vector 10)
     mapM_ (\req -> do

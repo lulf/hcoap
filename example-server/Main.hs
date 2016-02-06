@@ -10,7 +10,7 @@ findPath (option:options) =
     UriPath value -> value
     _             -> findPath options
 
-requestHandler :: Request -> IO Response
+requestHandler :: RequestHandler
 requestHandler request = do
   let options = requestOptions request
   let path = findPath options
@@ -23,5 +23,6 @@ main = do
   withSocketsDo $ do
     sock <- socket AF_INET6 Datagram defaultProtocol
     bindSocket sock (SockAddrInet6 12345 0 iN6ADDR_ANY 0)
-    runServer (createUDPTransport sock) requestHandler
+    server <- createServer (createUDPTransport sock) requestHandler
+    runServer server
 
