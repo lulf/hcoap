@@ -1,9 +1,19 @@
+{-|
+Module:  Network.CoAP.Client
+Description: CoAP client library
+Maintainer: ulf.lilleengen@gmail.com
+License: BSD3
+
+The CoAP client API is intended to provide the minimal building block needed for sending CoAP requests. The API exposes CoAP request and response types and handles all internal messaging details of the CoAP protocol.
+-}
 module Network.CoAP.Client
 ( Request(..)
+, Client
 , Method(..)
 , Response(..)
 , ResponseCode(..)
 , Option(..)
+, OptionString
 , MediaType(..)
 , doRequest
 , createClient
@@ -20,9 +30,13 @@ import Data.ByteString
 import Data.Word
 import System.Random
                     
-data Client = Client { doRequest :: Endpoint -> Request -> IO Response
+-- | A client that can perform CoAP requests.
+data Client = Client { -- | Send a CoAP request to a given endpoint. Returns a CoAP response.
+                       doRequest :: Endpoint -> Request -> IO Response
                      , msgThreadId :: Async ()}
 
+-- | Create a client using a given transport. This will spawn internal messaging threads making the
+-- client ready to send requests.
 createClient :: Transport -> IO Client
 createClient transport = do
   state <- createMessagingState transport
@@ -30,8 +44,9 @@ createClient transport = do
   return Client { doRequest = doRequestInternal state
                 , msgThreadId = msgThread }
 
+-- | Shuts down the internal messaging threads and stops the client
 shutdownClient :: Client -> IO ()
-shutdownClient client = wait (msgThreadId client)
+shutdownClient client = wait (msgThreadId client) -- TODO: Actually shut down the threads...
 
 generateToken :: Int -> IO [Word8]
 generateToken 0 = return []

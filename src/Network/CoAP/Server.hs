@@ -1,3 +1,11 @@
+{-|
+Module:  Network.CoAP.Server
+Description: CoAP server library
+Maintainer: ulf.lilleengen@gmail.com
+License: BSD3
+
+The CoAP server API is intended to provide the minimal building block needed for creating CoAP servers. The API exposes CoAP requests and response types and handles all internal messaging details of the CoAP protocol.
+-}
 module Network.CoAP.Server
 ( Request(..)
 , Method(..)

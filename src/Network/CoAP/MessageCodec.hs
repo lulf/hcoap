@@ -188,6 +188,7 @@ getMessage = do
                   , messageOptions = options
                   , messagePayload = payload })
 
+-- | Decode a CoAP message according to the specification.
 decode :: BS.ByteString -> Message
 decode msg = runGet getMessage (fromStrict msg)
 
@@ -340,5 +341,6 @@ putMessage msg = do
   putOptions (messageOptions msg)
   putPayload (messagePayload msg)
 
+-- | Encode a CoAP message according to the specification.
 encode :: Message -> BS.ByteString
 encode msg = toStrict (runPut (putMessage msg))
