@@ -47,10 +47,16 @@ data MessageContext = MessageContext { message :: Message
                                      , srcEndpoint :: Endpoint
                                      , dstEndpoint :: Endpoint } deriving (Show)
 
-data CoAPRequest = CoAPRequest
-    { requestMessage     :: Message
-    , requestDestination :: SockAddr
-    , requestOrigin      :: SockAddr } deriving (Show)
+data Response =
+  Response { responseCode    :: ResponseCode
+           , responseOptions :: [Option]
+           , responsePayload :: Maybe Payload  } deriving (Show)
+
+data Request =
+  Request { requestMethod   :: Method
+          , requestOptions  :: [Option]
+          , requestPayload  :: Maybe Payload
+          , requestReliable :: Bool } deriving (Show)
 
 data ResponseCode = Created
                   | Deleted
@@ -74,13 +80,6 @@ data ResponseCode = Created
                   | GatewayTimeout
                   | ProxyingNotSupported
                   deriving (Show, Eq)
-
-data CoAPResponse = CoAPResponse
-  { request          :: CoAPRequest
-  , responseCode     :: ResponseCode
-  , responseOptions  :: [Option]
-  , responsePayload  :: Maybe Payload } deriving (Show)
-
 
 data MessageCode = CodeRequest Method
                  | CodeResponse ResponseCode

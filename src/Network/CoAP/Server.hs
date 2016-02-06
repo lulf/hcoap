@@ -1,12 +1,7 @@
 module Network.CoAP.Server
 ( Request(..)
-, requestMethod
-, requestOptions
-, requestPayload
-, requestOrigin
 , Method(..)
 , Response(..)
-, createResponse
 , ResponseCode(..)
 , Option(..)
 , MediaType(..)
@@ -23,8 +18,6 @@ import Control.Concurrent.STM
 import Network.Socket
 
 type RequestHandler = (Request -> IO Response)
-type Request = CoAPRequest
-type Response = CoAPResponse
 
 data Server = Server { runServer :: IO ()
                      , msgThreadId :: Async () }
@@ -40,29 +33,14 @@ createServer transport handler = do
 shutdownServer :: Server -> IO ()
 shutdownServer server = wait (msgThreadId server)
 
-requestMethod :: CoAPRequest -> Method
-requestMethod request =
-  let (CodeRequest method) = messageCode (messageHeader (requestMessage request))
-   in method
-
-requestOptions :: CoAPRequest -> [Option]
-requestOptions = messageOptions . requestMessage
-
-requestPayload :: CoAPRequest -> Maybe Payload
-requestPayload = messagePayload . requestMessage
-
-createResponse :: Request -> ResponseCode -> [Option] -> Maybe Payload -> Response
-createResponse req code options payload =
-    CoAPResponse { request = req
-                 , responseCode = code
-                 , responseOptions = options
-                 , responsePayload = payload }
-
-createRequest :: MessageContext -> CoAPRequest
+createRequest :: MessageContext -> Request
 createRequest reqCtx =
-    CoAPRequest { requestMessage = message reqCtx
-                                   , requestOrigin = srcEndpoint reqCtx
-                                   , requestDestination = dstEndpoint reqCtx }
+  let msg = message reqCtx
+      (CodeRequest method) = messageCode (messageHeader msg)
+   in Request { requestMethod = method
+              , requestOptions = messageOptions msg 
+              , requestPayload = messagePayload msg
+              , requestReliable = messageType (messageHeader msg) == CON }
 
 handleRequest :: MessageContext -> RequestHandler -> MessagingState -> IO ()
 handleRequest requestCtx requestHandler state = do
@@ -71,7 +49,7 @@ handleRequest requestCtx requestHandler state = do
   {-putStrLn ("Received request: " ++ (show request))-}
   response <- requestHandler request
   {-putStrLn ("Produced response: " ++ (show response))-}
-  let responseMsg = createResponseMessage response
+  let responseMsg = createResponseMessage (message requestCtx) response
   sendResponse requestCtx responseMsg state
 
 requestLoop :: MessagingState -> RequestHandler -> IO ()
@@ -81,10 +59,9 @@ requestLoop state requestHandler = do
   _ <- async (handleRequest requestCtx requestHandler state)
   requestLoop state requestHandler
 
-createResponseMessage :: CoAPResponse -> Message
-createResponseMessage response =
-  let origMsg = requestMessage (request response)
-      origHeader = messageHeader origMsg
+createResponseMessage :: Message -> Response -> Message
+createResponseMessage origMsg response =
+  let origHeader = messageHeader origMsg
       header = MessageHeader { messageVersion = messageVersion origHeader
                              , messageType = messageType origHeader
                              , messageCode = CodeResponse (responseCode response)
