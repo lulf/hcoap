@@ -25,12 +25,16 @@ import Control.Concurrent.Async
 import Control.Concurrent.STM
 import Network.Socket
 
+-- | A request handler for a CoAP request. The request may be called by multiple threads
+-- concurrently.
 type RequestHandler = (Request, Endpoint) -> IO Response
 
+-- | A CoAP server instance.
 data Server = Server { runServer :: IO ()
                      , msgThreadId :: Async () }
                        
 
+-- | Create a CoAP server with a given transport and request handler
 createServer :: Transport -> RequestHandler -> IO Server
 createServer transport handler = do
   state <- createMessagingState transport
@@ -38,8 +42,9 @@ createServer transport handler = do
   return Server { runServer = requestLoop state handler
                 , msgThreadId = msgThread }
 
+-- | Shutdown a CoAP server.
 shutdownServer :: Server -> IO ()
-shutdownServer server = wait (msgThreadId server)
+shutdownServer server = wait (msgThreadId server) -- TODO: Stop messaging thread.
 
 createRequest :: MessageContext -> Request
 createRequest reqCtx =
