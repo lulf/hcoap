@@ -5,8 +5,9 @@ module Network.CoAP.Client
 , ResponseCode(..)
 , Option(..)
 , MediaType(..)
-, Client(..)
+, doRequest
 , createClient
+, shutdownClient
 ) where
 
 import Network.CoAP.Messaging
@@ -28,6 +29,9 @@ createClient transport = do
   msgThread <- async (messagingLoop state)
   return Client { doRequest = doRequestInternal state
                 , msgThreadId = msgThread }
+
+shutdownClient :: Client -> IO ()
+shutdownClient client = wait (msgThreadId client)
 
 generateToken :: Int -> IO [Word8]
 generateToken 0 = return []
