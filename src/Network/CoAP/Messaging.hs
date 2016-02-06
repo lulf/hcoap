@@ -141,12 +141,9 @@ recvLoop state@(MessagingState transport store) = do
   let msgId = messageId (messageHeader message)
   let msgType = messageType (messageHeader message)
   let msgCode = messageCode (messageHeader message)
-  atomically (do
-    -- This is a bit clumsy
-    when (msgType == ACK) (do _ <- takeMessageByIdAndOrigin msgId srcEndpoint (unconfirmedMessages store)
-                              return ())
-    when (msgCode /= CodeEmpty) (queueMessage messageState (incomingMessages store))
-    return ())
+  atomically (when (msgType == ACK) (do _ <- takeMessageByIdAndOrigin msgId srcEndpoint (unconfirmedMessages store)
+                                        return ()))
+  atomically (when (msgCode /= CodeEmpty) (queueMessage messageState (incomingMessages store)))
   recvLoop state
   
 sendLoop :: MessagingState -> IO ()
