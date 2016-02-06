@@ -60,7 +60,7 @@ doRequestInternal state dest (Request method options payload reliable) = do
                       , T.messageOptions = options
                       , T.messagePayload = payload }
   sendRequest msg dest state
-  responseCtx <- atomically (recvResponse msg dest state)
+  responseCtx <- recvResponse msg dest state
   let (T.Message (T.MessageHeader _ _ (T.CodeResponse rCode) _) _ opts pload) = T.message responseCtx
   return Response { responseCode = rCode
                   , responseOptions = opts

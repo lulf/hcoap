@@ -55,7 +55,7 @@ createRequest reqCtx =
 requestLoop :: MessagingState -> (Request -> IO Response) -> IO ()
 requestLoop state requestHandler = do
   {-putStrLn "Waiting for incoming message"-}
-  requestCtx <- atomically (recvRequest state)
+  requestCtx <- recvRequest state
   let request = createRequest requestCtx
   {-putStrLn ("Received request: " ++ (show request))-}
   response <- requestHandler request

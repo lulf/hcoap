@@ -254,12 +254,12 @@ sendMessage message dstEndpoint (MessagingState transport store) = do
                                   , retransmitCount = 0}
   atomically (queueMessage messageState (outgoingMessages store))
 
-recvMessageMatching :: (MessageState -> Bool) -> MessagingState -> STM MessageContext
+recvMessageMatching :: (MessageState -> Bool) -> MessagingState -> IO MessageContext
 recvMessageMatching matchFilter (MessagingState _ store) = do
-  msgState <- takeMessageRetryMatching matchFilter (incomingMessages store)
+  msgState <- atomically (takeMessageRetryMatching matchFilter (incomingMessages store))
   let msgCtx = messageContext msgState
   let msgType = messageType (messageHeader (message msgCtx))
-  when (msgType == CON) (queueMessage msgState (unackedMessages store))
+  when (msgType == CON) (atomically (queueMessage msgState (unackedMessages store)))
   return msgCtx
 
 
@@ -269,7 +269,7 @@ cmpMessageCode (CodeResponse _) (CodeResponse _) = True
 cmpMessageCode CodeEmpty CodeEmpty = True
 cmpMessageCode _ _ = False
 
-recvRequest :: MessagingState -> STM MessageContext
+recvRequest :: MessagingState -> IO MessageContext
 recvRequest = recvMessageMatching (cmpMessageCode (CodeRequest GET) . messageCode . messageHeader . message . messageContext)
 
 createAckResponse :: Message -> Message
@@ -329,7 +329,7 @@ sendRequest (Message (MessageHeader msgVersion msgType msgCode _) tkn opts paylo
                     , messagePayload = payload }
   sendMessage msg msgdest state
 
-recvResponse :: Message -> Endpoint -> MessagingState -> STM MessageContext
+recvResponse :: Message -> Endpoint -> MessagingState -> IO MessageContext
 recvResponse reqMessage endpoint = recvMessageMatching matchFilter
   where matchFilter x = cmpMessageCode (CodeResponse Created) (messageCode (messageHeader (message (messageContext x)))) && messageToken reqMessage == messageToken (message (messageContext x))
 
