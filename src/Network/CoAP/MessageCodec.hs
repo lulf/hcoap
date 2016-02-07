@@ -5,11 +5,11 @@ module Network.CoAP.MessageCodec
 
 import Debug.Trace
 import Network.CoAP.Types
-import Data.ByteString.Lazy
+import Data.ByteString.Lazy hiding (map)
 import qualified Data.ByteString as BS
 import Data.Word
 import Data.Maybe
-import Data.List (sortOn)
+import Data.List (sortBy)
 import Data.Binary hiding (encode, decode)
 import qualified Data.Binary as DB
 import Data.Binary.Get
@@ -323,7 +323,7 @@ putOptionsLoop lastNumber (opt:options) = do
 
 putOptions :: [Option] -> Put
 putOptions options = do
-  let sortedOptions = sortOn (\o -> fst (encodeOption o)) options
+  let sortedOptions = sortBy (\x y -> compare (fst (encodeOption x)) (fst (encodeOption y))) options
   putOptionsLoop 0 sortedOptions
 
 putPayload :: Maybe Payload -> Put
