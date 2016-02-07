@@ -1,3 +1,4 @@
+copyright:           Copyright (c) 2016, Ulf Lilleengen
 name:                hcoap
 version:             0.1.0.0
 synopsis:            Library for handling CoAP protocol
@@ -13,8 +14,10 @@ description:         CoAP library for writing CoAP clients, servers or just for 
                      building CoAP servers and clients on top of a messaging layer which provides
                      reliable transport of CoAP requests/responses.
 synopsis:            CoAP implementation for Haskell.
-stability:           experimental
+stability:           experimental 
 cabal-version:       >=1.10
+
+extra-doc-files:     README.md
 
 library
   exposed-modules: Network.CoAP.Server, Network.CoAP.Client, Network.CoAP.Message, Network.CoAP.Transport
@@ -65,3 +68,7 @@ executable hcoap-example-client
                        bytestring,
                        hcoap
   default-language:    Haskell2010
+
+source-repository head
+  type:     git
+  location: git://github.com/lulf/hcoap.git
