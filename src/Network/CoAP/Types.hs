@@ -1,3 +1,9 @@
+{-|
+Module:  Network.CoAP.Types
+Description: CoAP types
+Maintainer: ulf.lilleengen@gmail.com
+License: BSD3
+-}
 module Network.CoAP.Types where
 
 import Data.ByteString.Lazy
@@ -51,6 +57,7 @@ type Payload = BS.ByteString
 -- | Request Method
 data Method = GET | POST | PUT | DELETE deriving (Show, Eq)
 
+-- | A message with additional context on source and destination
 data MessageContext = MessageContext { message :: Message
                                      , srcEndpoint :: Endpoint
                                      , dstEndpoint :: Endpoint } deriving (Show)
