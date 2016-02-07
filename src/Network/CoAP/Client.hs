@@ -5,6 +5,12 @@ Maintainer: ulf.lilleengen@gmail.com
 License: BSD3
 
 The CoAP client API is intended to provide the minimal building block needed for sending CoAP requests. The API exposes CoAP request and response types and handles all internal messaging details of the CoAP protocol.
+
+Example:
+@
+  client <- createClient (createUDPTransport socket)
+  doRequest client (SockAddrInet 5683 0) (Request GET [UriPath path] Nothing True)
+@
 -}
 module Network.CoAP.Client
 ( Request(..)
