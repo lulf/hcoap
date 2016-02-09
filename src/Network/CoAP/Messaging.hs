@@ -31,7 +31,7 @@ data MessageState = MessageState { messageContext  :: MessageContext
                                  , retransmitCount :: Integer } deriving (Show)
 
 cmpMessageState a b =
-  messageId (messageHeader (message (messageContext a))) == messageId (messageHeader (message (messageContext b))) &&
+  messageId (message (messageContext a)) == messageId (message (messageContext b)) &&
   srcEndpoint (messageContext a) == srcEndpoint (messageContext b)
 
 instance Eq MessageState where
@@ -125,7 +125,7 @@ takeMessageByToken :: Token -> TVar MessageList -> STM (Maybe MessageState)
 takeMessageByToken token = takeMessageMatching (\x -> token == messageToken (message (messageContext x)))
 
 takeMessageByIdAndOrigin :: MessageId -> Endpoint -> TVar MessageList -> STM (Maybe MessageState)
-takeMessageByIdAndOrigin msgId origin = takeMessageMatching (\x -> (origin == dstEndpoint (messageContext x)) && (msgId == messageId (messageHeader (message (messageContext x)))))
+takeMessageByIdAndOrigin msgId origin = takeMessageMatching (\x -> (origin == dstEndpoint (messageContext x)) && (msgId == messageId (message (messageContext x))))
 
 recvLoop :: MessagingState -> IO ()
 recvLoop state@(MessagingState transport store) = do
@@ -141,9 +141,9 @@ recvLoop state@(MessagingState transport store) = do
                                   , insertionTime = now
                                   , replyTimeout = 0
                                   , retransmitCount = 0 }
-  let msgId = messageId (messageHeader message)
-  let msgType = messageType (messageHeader message)
-  let msgCode = messageCode (messageHeader message)
+  let msgId = messageId message
+  let msgType = messageType message
+  let msgCode = messageCode message
   atomically (when (msgType == ACK) (do _ <- takeMessageByIdAndOrigin msgId srcEndpoint (unconfirmedMessages store)
                                         return ()))
   atomically (when (msgCode /= CodeEmpty) (queueMessage messageState (incomingMessages store)))
@@ -153,7 +153,7 @@ sendLoop :: MessagingState -> IO ()
 sendLoop state@(MessagingState transport store) = do
   msgState <- atomically (do
     msgState <- takeMessageRetry (outgoingMessages store)
-    let msgType = messageType (messageHeader (message (messageContext msgState)))
+    let msgType = messageType (message (messageContext msgState))
     when (msgType == CON) (queueMessage msgState (unconfirmedMessages store))
     return msgState)
   let msgCtx = messageContext msgState
@@ -167,12 +167,11 @@ createAckMessage :: UTCTime -> MessageState -> MessageState
 createAckMessage now origMessageState =
   let origCtx = messageContext origMessageState
       origMessage = message origCtx
-      origHeader = messageHeader origMessage
-      newHeader = MessageHeader { messageVersion = messageVersion origHeader
-                                , messageType = ACK
-                                , messageCode = CodeEmpty
-                                , messageId = messageId origHeader }
-      newMessage = Message { messageHeader = newHeader
+
+      newMessage = Message { messageVersion = messageVersion origMessage
+                           , messageType = ACK
+                           , messageCode = CodeEmpty
+                           , messageId = messageId origMessage
                            , messageToken = empty
                            , messageOptions = []
                            , messagePayload = Nothing }
@@ -262,7 +261,7 @@ recvMessageMatching :: (MessageState -> Bool) -> MessagingState -> IO MessageCon
 recvMessageMatching matchFilter (MessagingState _ store) = do
   msgState <- atomically (takeMessageRetryMatching matchFilter (incomingMessages store))
   let msgCtx = messageContext msgState
-  let msgType = messageType (messageHeader (message msgCtx))
+  let msgType = messageType (message msgCtx)
   when (msgType == CON) (atomically (queueMessage msgState (unackedMessages store)))
   return msgCtx
 
@@ -274,31 +273,27 @@ cmpMessageCode CodeEmpty CodeEmpty = True
 cmpMessageCode _ _ = False
 
 recvRequest :: MessagingState -> IO MessageContext
-recvRequest = recvMessageMatching (cmpMessageCode (CodeRequest GET) . messageCode . messageHeader . message . messageContext)
+recvRequest = recvMessageMatching (cmpMessageCode (CodeRequest GET) . messageCode . message . messageContext)
 
 createAckResponse :: Message -> Message
 createAckResponse response =
-  let origHeader = messageHeader response
-      header = MessageHeader { messageVersion = messageVersion origHeader
-                             , messageType = ACK
-                             , messageCode = messageCode origHeader
-                             , messageId = messageId origHeader }
-   in Message { messageHeader  = header
-              , messageToken   = messageToken response
-              , messageOptions = messageOptions response
-              , messagePayload = messagePayload response }
+   Message { messageVersion = messageVersion response
+           , messageType = ACK
+           , messageCode = messageCode response
+           , messageId = messageId response
+           , messageToken   = messageToken response
+           , messageOptions = messageOptions response
+           , messagePayload = messagePayload response }
 
 setMessageId :: MessageId -> Message -> Message
 setMessageId msgId response =
-  let origHeader = messageHeader response
-      header = MessageHeader { messageVersion = messageVersion origHeader
-                             , messageType = messageType origHeader
-                             , messageCode = messageCode origHeader
-                             , messageId = msgId }
-   in Message { messageHeader  = header
-              , messageToken   = messageToken response
-              , messageOptions = messageOptions response
-              , messagePayload = messagePayload response }
+   Message { messageVersion = messageVersion response
+           , messageType = messageType response
+           , messageCode = messageCode response
+           , messageId = msgId
+           , messageToken   = messageToken response
+           , messageOptions = messageOptions response
+           , messagePayload = messagePayload response }
 
 allocateMessageId :: IO MessageId
 allocateMessageId = randomIO
@@ -312,7 +307,7 @@ sendResponse requestCtx response state@(MessagingState _ store) = do
 
   msgId <- case unackedMsg of
              Nothing -> allocateMessageId
-             _       -> return (messageId (messageHeader (message requestCtx)))
+             _       -> return (messageId (message requestCtx))
     
   let outgoingMessage = case unackedMsg of
                           Nothing -> setMessageId msgId response
@@ -321,13 +316,12 @@ sendResponse requestCtx response state@(MessagingState _ store) = do
   sendMessage outgoingMessage origin state
 
 sendRequest :: Message -> Endpoint -> MessagingState -> IO ()
-sendRequest (Message (MessageHeader msgVersion msgType msgCode _) tkn opts payload) msgdest state = do
+sendRequest (Message msgVersion msgType msgCode _ tkn opts payload) msgdest state = do
   msgId <- allocateMessageId
-  let msgHeader = MessageHeader { messageVersion = msgVersion
-                                , messageType = msgType
-                                , messageCode = msgCode
-                                , messageId = msgId }
-  let msg = Message { messageHeader = msgHeader
+  let msg = Message { messageVersion = msgVersion
+                    , messageType = msgType
+                    , messageCode = msgCode
+                    , messageId = msgId
                     , messageToken = tkn
                     , messageOptions = opts
                     , messagePayload = payload }
@@ -335,5 +329,5 @@ sendRequest (Message (MessageHeader msgVersion msgType msgCode _) tkn opts paylo
 
 recvResponse :: Message -> Endpoint -> MessagingState -> IO MessageContext
 recvResponse reqMessage endpoint = recvMessageMatching matchFilter
-  where matchFilter x = cmpMessageCode (CodeResponse Created) (messageCode (messageHeader (message (messageContext x)))) && messageToken reqMessage == messageToken (message (messageContext x))
+  where matchFilter x = cmpMessageCode (CodeResponse Created) (messageCode (message (messageContext x))) && messageToken reqMessage == messageToken (message (messageContext x))
 

@@ -58,11 +58,11 @@ shutdownServer state threads = do
 createRequest :: MessageContext -> Request
 createRequest reqCtx =
   let msg = message reqCtx
-      (CodeRequest method) = messageCode (messageHeader msg)
+      (CodeRequest method) = messageCode msg
    in Request { requestMethod = method
               , requestOptions = messageOptions msg 
               , requestPayload = messagePayload msg
-              , requestReliable = messageType (messageHeader msg) == CON }
+              , requestReliable = messageType msg == CON }
 
 handleRequest :: MessageContext -> RequestHandler -> MessagingState -> IO ()
 handleRequest requestCtx requestHandler state = do
@@ -83,13 +83,11 @@ requestLoop state requestHandler = do
 
 createResponseMessage :: Message -> Response -> Message
 createResponseMessage origMsg response =
-  let origHeader = messageHeader origMsg
-      header = MessageHeader { messageVersion = messageVersion origHeader
-                             , messageType = messageType origHeader
-                             , messageCode = CodeResponse (responseCode response)
-                             , messageId = messageId origHeader }
-   in Message { messageHeader  = header
-              , messageToken   = messageToken origMsg
-              , messageOptions = responseOptions response
-              , messagePayload = responsePayload response }
+   Message { messageVersion = messageVersion origMsg
+           , messageType = messageType origMsg
+           , messageCode = CodeResponse (responseCode response)
+           , messageId = messageId origMsg
+           , messageToken   = messageToken origMsg
+           , messageOptions = responseOptions response
+           , messagePayload = responsePayload response }
 

@@ -107,14 +107,6 @@ data MessageCode = CodeRequest Method
 -- | Valid CoAP message types.
 data MessageType = CON | NON | ACK | RST deriving (Show, Eq)
 
--- | CoAP message header.
-data MessageHeader = MessageHeader
-  { messageVersion     :: MessageVersion 
-  , messageType        :: MessageType
-  , messageCode        :: MessageCode
-  , messageId          :: MessageId
-  } deriving (Show)
-
 -- | CoAP version. Only a value of 1 is valid.
 type MessageVersion = Int
 -- | CoAP message id. This is unique for each message from a given endpoint.
@@ -124,7 +116,10 @@ type Token          = BS.ByteString
 
 -- | CoAP message record. Can be encoded and decoded to ByteString.
 data Message = Message
-  { messageHeader  :: MessageHeader
+  { messageVersion :: MessageVersion 
+  , messageType    :: MessageType
+  , messageCode    :: MessageCode
+  , messageId      :: MessageId
   , messageToken   :: Token
   , messageOptions :: [Option]
   , messagePayload :: Maybe Payload

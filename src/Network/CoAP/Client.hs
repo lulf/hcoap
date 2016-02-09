@@ -65,19 +65,19 @@ generateToken len = do
 
 doRequestInternal :: MessagingState -> Endpoint -> Request -> IO Response
 doRequestInternal state dest (Request method options payload reliable) = do
-  let header = MessageHeader { messageVersion = 1
-                             , messageType = if reliable then CON else NON
-                             , messageCode = CodeRequest method
-                             , messageId = 0 }
+
   tokenLen <- randomRIO (0, 8)
   token <- generateToken tokenLen
-  let msg = Message { messageHeader = header
-                      , messageToken = pack token
-                      , messageOptions = options
-                      , messagePayload = payload }
+  let msg = Message { messageVersion = 1
+                    , messageType = if reliable then CON else NON
+                    , messageCode = CodeRequest method
+                    , messageId = 0
+                    , messageToken = pack token
+                    , messageOptions = options
+                    , messagePayload = payload }
   sendRequest msg dest state
   responseCtx <- recvResponse msg dest state
-  let (Message (MessageHeader _ _ (CodeResponse rCode) _) _ opts pload) = message responseCtx
+  let (Message _ _ (CodeResponse rCode) _ _ opts pload) = message responseCtx
   return Response { responseCode = rCode
                   , responseOptions = opts
                   , responsePayload = pload }

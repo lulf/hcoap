@@ -79,17 +79,6 @@ instance Arbitrary MessageType where
 instance Arbitrary Method where
   arbitrary = elements [PUT, GET, POST, DELETE]
 
-instance Arbitrary MessageHeader where
-  arbitrary = do
-    msgType <- arbitrary
-    msgMethod <- arbitrary
-    msgId <- arbitrary
-    return (MessageHeader { messageVersion = 1
-                          , messageType    = msgType
-                          , messageCode    = CodeRequest msgMethod
-                          , messageId      = msgId})
-
-
 instance Arbitrary ByteString where
   arbitrary = suchThat (fmap pack arbitrary) (\s -> ((length s > 0) && (length s <= 8)))
 
@@ -112,11 +101,16 @@ instance Arbitrary Option where
 
 instance Arbitrary Message where
   arbitrary = do
-    hdr <- arbitrary
+    msgType <- arbitrary
+    msgMethod <- arbitrary
+    msgId <- arbitrary
     tkn <- arbitrary
     options <- arbitrary
     payload <- arbitrary
-    return (Message { messageHeader = hdr
+    return (Message { messageVersion = 1
+                    , messageType    = msgType
+                    , messageCode    = CodeRequest msgMethod
+                    , messageId      = msgId
                     , messageToken = tkn
                     , messageOptions = [options]
                     , messagePayload = payload })

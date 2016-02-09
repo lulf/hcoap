@@ -8,7 +8,6 @@ The CoAP message API is intended to provide the minimal building block needed fo
 -}
 module Network.CoAP.Message
 ( Message(..)
-, MessageHeader(..)
 , MessageVersion(..)
 , MessageType(..)
 , MessageId(..)

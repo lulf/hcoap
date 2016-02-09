@@ -18,24 +18,24 @@ import Data.Bits
 import Prelude hiding (null, length, fromStrict, toStrict)
 
 getType :: Word8 -> Get MessageType
-getType 0 = return (CON)
-getType 1 = return (NON)
-getType 2 = return (ACK)
-getType 3 = return (RST)
+getType 0 = return CON
+getType 1 = return NON
+getType 2 = return ACK
+getType 3 = return RST
 getType _ = fail "Unknown type"
 
 getRequestMethod :: Word8 -> Get Method
-getRequestMethod 1 = return (GET)
-getRequestMethod 2 = return (POST)
-getRequestMethod 3 = return (PUT)
-getRequestMethod 4 = return (DELETE)
+getRequestMethod 1 = return GET
+getRequestMethod 2 = return POST
+getRequestMethod 3 = return PUT
+getRequestMethod 4 = return DELETE
 getRequestMethod _ = fail "Unknown request method"
 
 getResponseCode :: Word8 -> Get ResponseCode
-getResponseCode _ = return (Created)
+getResponseCode _ = return Created
 
 getCode :: Word8 -> Word8 -> Get MessageCode
-getCode 0 0 = return (CodeEmpty)
+getCode 0 0 = return CodeEmpty
 getCode 0 detail = do
   method <- getRequestMethod detail
   return (CodeRequest method)
@@ -52,28 +52,11 @@ getTokenLength :: Word8 -> Get Word8
 getTokenLength len =
   if len > 8
      then fail "Invalid token length"
-     else return (len)
+     else return len
 
-getHeader :: Get (MessageHeader, Word8)
-getHeader = do
-  tmp <- getWord8
-  let version = fromIntegral (shiftR ((.&.) tmp 0xC0) 6)
-  msgType <- getType (shiftR ((.&.) tmp 0x30) 4)
-  tokenLength <- getTokenLength ((.&.) tmp 0x0F)
-
-  c <- getWord8
-  let clazz  = fromIntegral (shiftR ((.&.) c 0x70) 5)
-  let detail = fromIntegral ((.&.) c 0x1F)
-  code <- getCode clazz detail
-
-  id <- getWord16be
-  return ((MessageHeader version msgType code (fromIntegral id)), tokenLength)
-
-getToken :: Word8 -> Get (Token)
+getToken :: Word8 -> Get Token
 getToken 0 = return BS.empty
-getToken n = do
-  str <- getByteString (fromIntegral n)
-  return str
+getToken n = getByteString (fromIntegral n)
 
 intToMediaType 0  = TextPlain
 intToMediaType 40 = ApplicationLinkFormat
@@ -100,41 +83,24 @@ decodeOption 39 value _ = ProxyScheme value
 decodeOption 60 value valueLen = Size1 (decodeOptionInt value valueLen)
 
 getOptionInt :: Int -> Get Int
-getOptionInt valueLen = do
-  if valueLen == 0
-  then return 0
-  else if valueLen < 256
-       then do
-         v <- getWord8
-         return (fromIntegral v)
-       else if valueLen < 65536
-            then do
-              v <- getWord16be
-              return (fromIntegral v)
-            else if valueLen < 16777216
-                 then do
-                   a <- getWord8
-                   b <- getWord8
-                   c <- getWord8
-                   return ((.|.) ((.|.) (shiftL (fromIntegral a :: Int) 16) (shiftL (fromIntegral b :: Int) 8)) (fromIntegral c :: Int))
-                 else do
-                   v <- getWord32be
-                   return (fromIntegral v)
+getOptionInt valueLen
+  | valueLen == 0       = return 0
+  | valueLen < 256      = do v <- getWord8; return (fromIntegral v)
+  | valueLen < 65536    = do v <- getWord16be; return (fromIntegral v)
+  | valueLen < 16777216 = do a <- getWord8
+                             b <- getWord8
+                             c <- getWord8
+                             return ((.|.) ((.|.) (shiftL (fromIntegral a :: Int) 16) (shiftL (fromIntegral b :: Int) 8)) (fromIntegral c :: Int))
+  | otherwise           = do v <- getWord32be; return (fromIntegral v)
 
 decodeOptionInt :: BS.ByteString -> Int -> Int
 decodeOptionInt value valueLen = runGet (getOptionInt valueLen) (fromStrict value)
 
-getOptionPart :: Int -> Get (Int)
-getOptionPart part = do
-  if part == 14
-  then do
-    v <- getWord16be
-    return ((fromIntegral v) + 269)
-  else if part == 13
-       then do
-         v <- getWord8
-         return ((fromIntegral v) + 13)
-       else return part
+getOptionPart :: Int -> Get Int
+getOptionPart part
+  | part == 14 = do v <- getWord16be; return (fromIntegral v + 269)
+  | part == 13 = do v <- getWord8; return (fromIntegral v + 13)
+  | otherwise  = return part
 
 getOption :: Int -> Get (Maybe Option)
 getOption lastCode = do
@@ -155,18 +121,17 @@ getOption lastCode = do
       let option = decodeOption optCode value fullLength
       return (Just option)
 
-getOptionsLoop :: Int -> Get ([Option])
+getOptionsLoop :: Int -> Get [Option]
 getOptionsLoop lastCode = do
   opt <- getOption lastCode
   case opt of
-    Nothing -> do
-      return []
+    Nothing -> return []
     Just o  -> do
       let optCode = fst (encodeOption o)
       opts <- getOptionsLoop optCode
       return (o:opts)
 
-getOptions :: Get ([Option])
+getOptions :: Get [Option]
 getOptions = getOptionsLoop 0
 
 getPayload :: Get (Maybe Payload)
@@ -176,17 +141,28 @@ getPayload = do
          then Nothing
          else Just (BS.pack (unpack str)))
 
-
 getMessage :: Get Message
 getMessage = do
-  (header, tokenLength) <- getHeader
+  tmp <- getWord8
+  let version = fromIntegral (shiftR ((.&.) tmp 0xC0) 6)
+  msgType <- getType (shiftR ((.&.) tmp 0x30) 4)
+  tokenLength <- getTokenLength ((.&.) tmp 0x0F)
+
+  c <- getWord8
+  let clazz  = fromIntegral (shiftR ((.&.) c 0x70) 5)
+  let detail = fromIntegral ((.&.) c 0x1F)
+  code <- getCode clazz detail
+  id <- getWord16be
   token <- getToken tokenLength
   options <- getOptions
   payload <- getPayload
-  return (Message { messageHeader  = header
-                  , messageToken   = token
-                  , messageOptions = options
-                  , messagePayload = payload })
+  return Message { messageVersion = version
+                 , messageType    = msgType
+                 , messageCode    = code
+                 , messageId      = fromIntegral id
+                 , messageToken   = token
+                 , messageOptions = options
+                 , messagePayload = payload }
 
 -- | Decode a CoAP message according to the specification.
 decode :: BS.ByteString -> Message
@@ -234,12 +210,12 @@ encodeCode (CodeResponse detail) =
   let (responseClass, responseDetail) = encodeResponseCode detail
    in (.|.) (shiftL responseClass 5) responseDetail
 
-putHeader :: MessageHeader -> Word8 -> Put
-putHeader header tokenLength = do
-  let version = fromIntegral (messageVersion header) :: Word8
-  let eType   = encodeType (messageType header)
-  let code    = messageCode    header
-  let id      = messageId      header
+putHeader :: Message -> Word8 -> Put
+putHeader message tokenLength = do
+  let version = fromIntegral (messageVersion message) :: Word8
+  let eType   = encodeType (messageType message)
+  let code    = messageCode   message 
+  let id      = messageId     message 
   putWord8 ((.|.) ((.|.) (shiftL version 6) (shiftL eType 4)) ((.&.) tokenLength 0x0F))
   putWord8 (encodeCode code)
   putWord16be id
@@ -250,12 +226,9 @@ putToken = putByteString
 
 putOptionInt :: Int -> Put
 putOptionInt 0 = return ()
-putOptionInt n = do
-  if n < 256
-  then putWord8 (fromIntegral n)
-  else if n < 65536
-       then putWord16be (fromIntegral n)
-       else putWord32be (fromIntegral n)
+putOptionInt n | n < 256 = putWord8 (fromIntegral n)
+               | n < 65536 = putWord16be (fromIntegral n)
+               | otherwise = putWord32be (fromIntegral n)
 
 encodeOptionInt :: Int -> BS.ByteString
 encodeOptionInt n = BS.pack (unpack (runPut (putOptionInt n)))
@@ -336,7 +309,7 @@ putMessage :: Message -> Put
 putMessage msg = do
   let token = messageToken msg
   let tokenLength = BS.length token
-  putHeader  (messageHeader  msg) (fromIntegral tokenLength)
+  putHeader  msg (fromIntegral tokenLength)
   putToken   token
   putOptions (messageOptions msg)
   putPayload (messagePayload msg)
