@@ -8,7 +8,7 @@ import Data.ByteString.Char8 hiding (putStrLn)
 import Test.QuickCheck
 import Prelude hiding (null, length)
 import Control.Concurrent.Chan
-import Control.Concurrent
+import Control.Concurrent.Async
 import Control.Monad
 import System.Random
 import System.Timeout
@@ -54,7 +54,7 @@ testReliability =
     let transportA = createUnstableTransport linkAProb (endpointA, chanA) (endpointB, chanB)
     let transportB = createUnstableTransport linkBProb (endpointB, chanB) (endpointA, chanA)
     server <- S.createServer transportA testHandler
-    serverThread <- forkIO (S.runServer server)
+    serverThread <- async (S.runServer server)
     client <- C.createClient transportB 
     reqs <- generate (vector 10)
     mapM_ (\req -> do
@@ -64,7 +64,8 @@ testReliability =
       putStrLn "Got response, checking"
       assertEqual "Bad response code" C.Created (C.responseCode res)
       assertEqual "Bad payload" "Hello, Client" (unpack (fromJust (C.responsePayload res)))
-      ) reqs)
+      ) reqs
+    S.stopServer server)
 
 -- TODO, negative tests:
 -- * Invalid token length

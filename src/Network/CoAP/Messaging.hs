@@ -1,7 +1,8 @@
 module Network.CoAP.Messaging
 ( createMessagingState
 , MessagingState
-, messagingLoop
+, startMessaging
+, stopMessaging
 , recvRequest
 , sendResponse
 , sendRequest
@@ -16,6 +17,8 @@ import Data.Ord
 import Data.ByteString (empty)
 import Control.Concurrent.STM
 import Control.Concurrent
+import Control.Exception
+import Control.Concurrent.Async
 import Data.Maybe
 import Data.Time
 import System.Random
@@ -229,12 +232,16 @@ retransmitLoop state@(MessagingState _ store) = do
   retransmitLoop state
   
 
-messagingLoop :: MessagingState -> IO ()
-messagingLoop state = do
-  recvThread <- forkIO (recvLoop state)
-  sendThread <- forkIO (sendLoop state)
-  ackThread <- forkIO (ackLoop state)
-  retransmitLoop state
+runLoop :: MessagingState -> (MessagingState -> IO ()) -> IO ()
+runLoop state fn = do
+  err <- try (fn state) :: IO (Either AsyncException ())
+  return ()
+
+startMessaging :: MessagingState -> IO [Async ()]
+startMessaging state = mapM (async . runLoop state) [recvLoop, sendLoop, ackLoop, retransmitLoop]
+
+stopMessaging :: MessagingState -> [Async ()] -> IO ()
+stopMessaging state = mapM_ cancel 
 
 sendMessage :: Message -> Endpoint -> MessagingState -> IO ()
 sendMessage message dstEndpoint (MessagingState transport store) = do

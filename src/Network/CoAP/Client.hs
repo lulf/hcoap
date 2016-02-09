@@ -14,16 +14,14 @@ Example:
 -}
 module Network.CoAP.Client
 ( Request(..)
-, Client
+, Client(..)
 , Method(..)
 , Response(..)
 , ResponseCode(..)
 , Option(..)
 , OptionString
 , MediaType(..)
-, doRequest
 , createClient
-, shutdownClient
 ) where
 
 import Network.CoAP.Messaging
@@ -39,20 +37,24 @@ import System.Random
 -- | A client that can perform CoAP requests.
 data Client = Client { -- | Send a CoAP request to a given endpoint. Returns a CoAP response.
                        doRequest :: Endpoint -> Request -> IO Response
-                     , msgThreadId :: Async ()}
+                       -- | Stop a client. Ensures that no threads are running and that messaging
+                       -- layer is shut down.
+                     , shutdownClient :: IO () }
 
 -- | Create a client using a given transport. This will spawn internal messaging threads making the
 -- client ready to send requests.
 createClient :: Transport -> IO Client
 createClient transport = do
   state <- createMessagingState transport
-  msgThread <- async (messagingLoop state)
+  msgThreads <- startMessaging state
   return Client { doRequest = doRequestInternal state
-                , msgThreadId = msgThread }
+                , shutdownClient = stopClient state msgThreads }
 
 -- | Shuts down the internal messaging threads and stops the client
-shutdownClient :: Client -> IO ()
-shutdownClient client = wait (msgThreadId client) -- TODO: Actually shut down the threads...
+stopClient :: MessagingState -> [Async ()] -> IO ()
+stopClient state threads = do
+  stopMessaging state threads
+  mapM_ wait threads
 
 generateToken :: Int -> IO [Word8]
 generateToken 0 = return []

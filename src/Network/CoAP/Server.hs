@@ -22,7 +22,6 @@ module Network.CoAP.Server
 , Option(..)
 , MediaType(..)
 , createServer
-, shutdownServer
 , Server(..)
 , RequestHandler
 ) where
@@ -39,20 +38,22 @@ type RequestHandler = (Request, Endpoint) -> IO Response
 
 -- | A CoAP server instance.
 data Server = Server { runServer :: IO ()
-                     , msgThreadId :: Async () }
+                     , stopServer :: IO () }
                        
 
 -- | Create a CoAP server with a given transport and request handler
 createServer :: Transport -> RequestHandler -> IO Server
 createServer transport handler = do
   state <- createMessagingState transport
-  msgThread <- async (messagingLoop state)
+  msgThreads <- startMessaging state
   return Server { runServer = requestLoop state handler
-                , msgThreadId = msgThread }
+                , stopServer = shutdownServer state msgThreads }
 
 -- | Shutdown a CoAP server.
-shutdownServer :: Server -> IO ()
-shutdownServer server = wait (msgThreadId server) -- TODO: Stop messaging thread.
+shutdownServer :: MessagingState -> [Async ()] -> IO ()
+shutdownServer state threads = do
+  stopMessaging state threads
+  mapM_ wait threads
 
 createRequest :: MessageContext -> Request
 createRequest reqCtx =
