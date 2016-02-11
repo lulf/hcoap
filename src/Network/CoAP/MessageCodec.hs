@@ -259,20 +259,16 @@ encodeOption (ProxyScheme value)        = (39, value)
 encodeOption (Size1 value)              = (60, encodeOptionInt value)
 
 encodeOptionPart :: Int -> Word8
-encodeOptionPart value =
-  if value > 268
-  then 14
-  else if value > 12
-       then 13
-       else fromIntegral value
+encodeOptionPart value
+  | value > 268 = 14
+  | value > 12  = 13
+  | otherwise   = fromIntegral value
 
 putOptionPart :: Word8 -> Int -> Put
-putOptionPart valueLen value = do
-  if valueLen == 13
-  then putWord8 (fromIntegral (value - 13))
-  else if valueLen == 14
-       then putWord16be (fromIntegral (value - 269))
-       else return ()
+putOptionPart valueLen value
+  | valueLen == 13 = putWord8 (fromIntegral (value - 13))
+  | valueLen == 14 = putWord16be (fromIntegral (value - 269))
+  | otherwise      = return ()
 
 putOption :: Int -> BS.ByteString -> Put
 putOption nextDelta optValue = do
