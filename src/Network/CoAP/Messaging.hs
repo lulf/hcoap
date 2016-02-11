@@ -30,12 +30,10 @@ data MessageState = MessageState { messageContext  :: MessageContext
                                  , replyTimeout    :: Double 
                                  , retransmitCount :: Integer } deriving (Show)
 
-cmpMessageState a b =
-  messageId (message (messageContext a)) == messageId (message (messageContext b)) &&
-  srcEndpoint (messageContext a) == srcEndpoint (messageContext b)
 
 instance Eq MessageState where
-  (==) = cmpMessageState
+  (==) a b = messageId (message (messageContext a)) == messageId (message (messageContext b)) &&
+             srcEndpoint (messageContext a) == srcEndpoint (messageContext b)
 
 -- A message store contains an inbound and outbound list of messages that needs to be ACKed
 type MessageList = [MessageState]
