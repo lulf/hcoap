@@ -127,13 +127,11 @@ takeMessageByToken token = takeMessageMatching (\x -> token == messageToken (mes
 takeMessageByIdAndOrigin :: MessageId -> Endpoint -> TVar MessageList -> STM (Maybe MessageState)
 takeMessageByIdAndOrigin msgId origin = takeMessageMatching (\x -> (origin == dstEndpoint (messageContext x)) && (msgId == messageId (message (messageContext x))))
 
-recvLoop :: MessagingState -> IO ()
-recvLoop state@(MessagingState transport store) = do
-  {-putStrLn "Waiting for UDP packet"-}
-  (msgData, srcEndpoint) <- recvFrom transport
+recvLoopSuccess :: MessagingState -> Endpoint -> Message -> IO ()
+recvLoopSuccess state@(MessagingState transport store) srcEndpoint message = do
   dstEndpoint <- localEndpoint transport
   now <- getCurrentTime
-  let message = decode msgData
+
   let messageCtx = MessageContext { message = message
                                   , srcEndpoint = srcEndpoint
                                   , dstEndpoint = dstEndpoint }
@@ -147,6 +145,15 @@ recvLoop state@(MessagingState transport store) = do
   atomically (when (msgType == ACK) (do _ <- takeMessageByIdAndOrigin msgId srcEndpoint (unconfirmedMessages store)
                                         return ()))
   atomically (when (msgCode /= CodeEmpty) (queueMessage messageState (incomingMessages store)))
+
+recvLoopError :: String -> IO ()
+recvLoopError err = putStrLn ("Error parsing message: " ++ show err ++ ", skipping")
+
+recvLoop :: MessagingState -> IO ()
+recvLoop state@(MessagingState transport _) = do
+  {-putStrLn "Waiting for UDP packet"-}
+  (msgData, srcEndpoint) <- recvFrom transport
+  either recvLoopError (recvLoopSuccess state srcEndpoint) (decode msgData)
   recvLoop state
   
 sendLoop :: MessagingState -> IO ()

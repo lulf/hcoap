@@ -165,8 +165,12 @@ getMessage = do
                  , messagePayload = payload }
 
 -- | Decode a CoAP message according to the specification.
-decode :: BS.ByteString -> Message
-decode msg = runGet getMessage (fromStrict msg)
+decode :: BS.ByteString -> Either String Message
+decode msg =
+  let result = runGetOrFail getMessage (fromStrict msg)
+   in case result of
+        Left (_, _, errorStr) -> Left errorStr
+        Right (_, _, parsedMsg) -> Right parsedMsg
 
 encodeType :: MessageType -> Word8
 encodeType CON = 0

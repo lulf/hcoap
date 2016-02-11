@@ -118,8 +118,8 @@ instance Arbitrary Message where
 
 checkCodec msg =
   let encoded = encode msg
-      decoded = decode encoded
-   in (show msg) == (show decoded)
+      (Right decoded) = decode encoded
+   in show msg == show decoded
 
 main :: IO ()
 main = do
