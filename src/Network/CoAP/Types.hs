@@ -116,13 +116,13 @@ type Token          = BS.ByteString
 
 -- | CoAP message record. Can be encoded and decoded to ByteString.
 data Message = Message
-  { messageVersion :: MessageVersion 
-  , messageType    :: MessageType
-  , messageCode    :: MessageCode
-  , messageId      :: MessageId
-  , messageToken   :: Token
-  , messageOptions :: [Option]
-  , messagePayload :: Maybe Payload
+  { messageVersion :: !MessageVersion 
+  , messageType    :: !MessageType
+  , messageCode    :: !MessageCode
+  , messageId      :: !MessageId
+  , messageToken   :: !Token
+  , messageOptions :: ![Option]
+  , messagePayload :: !(Maybe Payload)
   } deriving (Show)
 
 
