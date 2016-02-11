@@ -20,7 +20,7 @@ tests = TestList [TestLabel "testReliability" testReliability]
 
 sendToChan prob chan msg endpoint = do
   v <- randomRIO(0, 1)
-  when (v >= prob) (putStrLn ("Message to to " ++ (show endpoint) ++ " dropped!"))
+  when (v >= prob) (putStrLn ("Message to to " ++ show endpoint ++ " dropped!"))
   when (v < prob) (writeChan chan msg)
   return (length msg)
 
@@ -38,10 +38,10 @@ testHandler (req, _) = return (S.Response S.Created [] (Just (pack "Hello, Clien
 instance Arbitrary C.Request where
   arbitrary = do
     pload <- arbitrary
-    return (C.Request { C.requestMethod = GET
-                      , C.requestOptions = []
-                      , C.requestPayload = pload
-                      , C.requestReliable = True })
+    return C.Request { C.requestMethod = GET
+                     , C.requestOptions = []
+                     , C.requestPayload = pload
+                     , C.requestReliable = True }
 
 testReliability =
   TestCase (do
@@ -80,7 +80,7 @@ instance Arbitrary Method where
   arbitrary = elements [PUT, GET, POST, DELETE]
 
 instance Arbitrary ByteString where
-  arbitrary = suchThat (fmap pack arbitrary) (\s -> ((length s > 0) && (length s <= 8)))
+  arbitrary = suchThat (fmap pack arbitrary) (\s -> not null s && (length s <= 8))
 
 instance Arbitrary MediaType where
   arbitrary = elements [TextPlain, ApplicationLinkFormat, ApplicationXml, ApplicationOctetStream, ApplicationExi, ApplicationJson]
@@ -107,13 +107,13 @@ instance Arbitrary Message where
     tkn <- arbitrary
     options <- arbitrary
     payload <- arbitrary
-    return (Message { messageVersion = 1
-                    , messageType    = msgType
-                    , messageCode    = CodeRequest msgMethod
-                    , messageId      = msgId
-                    , messageToken = tkn
-                    , messageOptions = [options]
-                    , messagePayload = payload })
+    return Message { messageVersion = 1
+                   , messageType    = msgType
+                   , messageCode    = CodeRequest msgMethod
+                   , messageId      = msgId
+                   , messageToken = tkn
+                   , messageOptions = [options]
+                   , messagePayload = payload }
 
 
 checkCodec msg =
