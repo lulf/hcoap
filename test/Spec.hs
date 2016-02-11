@@ -80,7 +80,7 @@ instance Arbitrary Method where
   arbitrary = elements [PUT, GET, POST, DELETE]
 
 instance Arbitrary ByteString where
-  arbitrary = suchThat (fmap pack arbitrary) (\s -> not null s && (length s <= 8))
+  arbitrary = suchThat (fmap pack arbitrary) (\s -> (length s > 0) && (length s <= 8))
 
 instance Arbitrary MediaType where
   arbitrary = elements [TextPlain, ApplicationLinkFormat, ApplicationXml, ApplicationOctetStream, ApplicationExi, ApplicationJson]
