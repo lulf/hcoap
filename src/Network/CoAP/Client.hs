@@ -33,10 +33,11 @@ import Network.Socket
 import Data.ByteString
 import Data.Word
 import System.Random
+import Network.URI
                     
 -- | A client that can perform CoAP requests.
 data Client = Client { -- | Send a CoAP request to a given endpoint. Returns a CoAP response.
-                       doRequest :: Endpoint -> Request -> IO Response
+                       doRequest :: URI -> Request -> IO Response
                        -- | Stop a client. Ensures that no threads are running and that messaging
                        -- layer is shut down.
                      , shutdownClient :: IO () }
@@ -63,9 +64,22 @@ generateToken len = do
   next <- generateToken (len - 1)
   return (tkn:next)
 
-doRequestInternal :: MessagingState -> Endpoint -> Request -> IO Response
-doRequestInternal state dest (Request method options payload reliable) = do
+addURIOptions  :: URI -> [Option] -> [Option]
+addURIOptions _ o = o
 
+createEndpoint :: URI -> Endpoint
+createEndpoint uri =
+  let (Just auth) = uriAuthority uri
+      hname = uriRegName auth
+      port = fromIntegral (read (uriPort auth) :: Int)
+      addr = read (hname
+   in if isIPv6address hname
+      then SockAddrInet6 port 0 addr 0
+      else SockAddrInet port ((read hname) :: Net4Addr)
+
+doRequestInternal :: MessagingState -> URI -> Request -> IO Response
+doRequestInternal state uri (Request method options payload reliable) = do
+  let dest = createEndpoint uri
   tokenLen <- randomRIO (0, 8)
   token <- generateToken tokenLen
   let msg = Message { messageVersion = 1
@@ -73,7 +87,7 @@ doRequestInternal state dest (Request method options payload reliable) = do
                     , messageCode = CodeRequest method
                     , messageId = 0
                     , messageToken = pack token
-                    , messageOptions = options
+                    , messageOptions = addURIOptions uri options
                     , messagePayload = payload }
   sendRequest msg dest state
   responseCtx <- recvResponse msg dest state
