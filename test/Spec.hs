@@ -58,7 +58,7 @@ testReliability =
     client <- C.createClient transportB 
     reqs <- generate (vector 10)
     mapM_ (\req -> do
-      response <- timeout 20000000 (C.doRequest client endpointA req)
+      response <- timeout 20000000 (C.doRawRequest client endpointA req)
       assertBool ("Timed out waiting for response on reliable request " ++ show req) (isJust response)
       let res = fromJust response
       putStrLn "Got response, checking"
