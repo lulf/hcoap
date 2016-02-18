@@ -52,7 +52,7 @@ createClient transport = do
   state <- createMessagingState transport
   msgThreads <- startMessaging state
   return Client { doRequest = doRequestInternal state
-                , doRawRequest = doRequestRawInternal state
+                , doRawRequest = doRawRequestInternal state
                 , shutdownClient = stopClient state msgThreads }
 
 -- | Shuts down the internal messaging threads and stops the client
@@ -72,10 +72,10 @@ doRequestInternal :: MessagingState -> URI -> Request -> IO Response
 doRequestInternal state uri (Request method options payload reliable) = do
   dest <- createEndpoint uri
   let newOpts = createOpts uri
-  doRequestRawInternal state dest (Request method (options ++ newOpts) payload reliable)
+  doRawRequestInternal state dest (Request method (options ++ newOpts) payload reliable)
 
-doRequestRawInternal :: MessagingState -> Endpoint -> Request -> IO Response
-doRequestRawInternal state dest (Request method options payload reliable) = do
+doRawRequestInternal :: MessagingState -> Endpoint -> Request -> IO Response
+doRawRequestInternal state dest (Request method options payload reliable) = do
   tokenLen <- randomRIO (0, 8)
   token <- generateToken tokenLen
   let msg = Message { messageVersion = 1
