@@ -33,7 +33,7 @@ library
                        random >= 1.1 && < 1.2,
                        async >= 2.1 && < 2.2,
                        network-uri >= 2.6 && < 3,
-                       iproute >= 1.7 && < 2,
+                       iproute >= 1.6 && < 2,
                        dns >= 2 && < 3
   hs-source-dirs:      src
   default-language:    Haskell2010
