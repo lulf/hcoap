@@ -11,15 +11,15 @@ The library is split into a high-level API in Network.CoAP.Server and Network.Co
 ## Example client
     main = do
       let request = Request { requestMethod = GET
-                            , requestOptions = [UriPath (B.pack "hello")]
+                            , requestOptions = []
                             , requestPayload = Nothing
                             , requestReliable = True }
     withSocketsDo $ do
       sock <- socket AF_INET6 Datagram defaultProtocol
-      bindSocket sock (SockAddrInet6 12345 0 iN6ADDR_ANY 0)
+      bindSocket sock (SockAddrInet6 0 0 iN6ADDR_ANY 0)
       let transport = createUDPTransport sock
-      let dest = SockAddrInet6 5683 0 (0, 0, 0, 0) 0
       client <- createClient transport
-      response <- doRequest client dest request
+      uri <- parseURI "coap://[::1]:5683/hello"
+      response <- doRequest client uri request
       putStrLn ("Got response: " ++ show response)
       return ()
