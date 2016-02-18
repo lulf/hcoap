@@ -55,7 +55,7 @@ data Option = ContentFormat MediaType
 type Payload = BS.ByteString
 
 -- | Request Method
-data Method = GET | POST | PUT | DELETE deriving (Show, Eq)
+data Method = GET | POST | PUT | DELETE deriving (Show, Eq, Read)
 
 -- | A message with additional context on source and destination
 data MessageContext = MessageContext { message :: Message
