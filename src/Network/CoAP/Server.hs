@@ -7,11 +7,12 @@ License: BSD3
 The CoAP server API is intended to provide the minimal building block needed for creating CoAP servers. The API exposes CoAP requests and response types and handles all internal messaging details of the CoAP protocol.
 
 Example:
+
 @
-  server <- createServer (createUDPTransport socket) (\(req, endpoint) = do
-    let payload = Just (B.pack ("{\"msg\":\"Hello, Client\"}"))
-    return (Response Content [ContentFormat ApplicationJson] payload))
-  runServer server
+    server <- createServer (createUDPTransport socket) (\(req, endpoint) = do
+      let payload = Just (B.pack ("{\"msg\":\"Hello, Client\"}"))
+      return (Response Content [ContentFormat ApplicationJson] payload))
+    runServer server
 @
 -}
 module Network.CoAP.Server
