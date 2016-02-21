@@ -22,7 +22,7 @@ requestHandler (request, _) = do
 main :: IO ()
 main =
   withSocketsDo $ do
-    sock <- socket AF_INET6 Datagram defaultProtocol
+    sock <- socket AF_INET Datagram defaultProtocol
     bindSocket sock (SockAddrInet 5683 iNADDR_ANY)
     server <- createServer (createUDPTransport sock) requestHandler
     runServer server
