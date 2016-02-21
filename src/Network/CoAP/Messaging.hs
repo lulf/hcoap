@@ -38,18 +38,18 @@ instance Eq MessageState where
 -- A message store contains an inbound and outbound list of messages that needs to be ACKed
 type MessageList = [MessageState]
 data MessagingStore = MessagingStore { incomingMessages    :: TVar MessageList
-                                     , outgoingMessages    :: TVar MessageList
                                      , unackedMessages     :: TVar MessageList 
+                                     , ackedMessages       :: TVar MessageList
                                      , unconfirmedMessages :: TVar MessageList }
 data MessagingState = MessagingState Transport MessagingStore
 
 createMessagingState :: Transport -> IO MessagingState
 createMessagingState transport = do
   incoming <- newTVarIO []
-  outgoing <- newTVarIO []
   unacked <- newTVarIO []
+  acked <- newTVarIO []
   unconfirmed <- newTVarIO []
-  return (MessagingState transport (MessagingStore incoming outgoing unacked unconfirmed))
+  return (MessagingState transport (MessagingStore incoming unacked acked unconfirmed))
 
 queueMessages :: [MessageState] -> TVar MessageList -> STM ()
 queueMessages messages msgListVar = do
@@ -119,11 +119,23 @@ takeMessagesMatching matchFilter msgListVar = do
     writeTVar msgListVar remainingMessages
     return foundMessages
 
+findMessagesMatching :: (MessageState -> Bool) -> TVar MessageList -> STM [MessageState]
+findMessagesMatching matchFilter msgListVar = do
+  msgList <- readTVar msgListVar
+  if null msgList
+  then return []
+  else do
+    let sortedMsgList = sortBy (comparing insertionTime) msgList
+    let (foundMessages, _) = partition matchFilter sortedMsgList
+    return foundMessages
+
 takeMessagesByTokenAndOrigin :: Token -> Endpoint -> TVar MessageList -> STM [MessageState]
 takeMessagesByTokenAndOrigin token origin = takeMessagesMatching (\x -> (origin == dstEndpoint (messageContext x)) && token == messageToken (message (messageContext x)))
 
 takeMessagesByIdAndOrigin :: MessageId -> Endpoint -> TVar MessageList -> STM [MessageState]
 takeMessagesByIdAndOrigin msgId origin = takeMessagesMatching (\x -> (origin == dstEndpoint (messageContext x)) && (msgId == messageId (message (messageContext x))))
+
+findMessagesByIdAndOrigin msgId origin = findMessagesMatching (\x -> (origin == dstEndpoint (messageContext x)) && (msgId == messageId (message (messageContext x))))
 
 recvLoopSuccess :: MessagingState -> Endpoint -> Message -> IO ()
 recvLoopSuccess state@(MessagingState transport store) srcEndpoint message = do
@@ -142,7 +154,14 @@ recvLoopSuccess state@(MessagingState transport store) srcEndpoint message = do
   let msgCode = messageCode message
   atomically (when (msgType == ACK) (do _ <- takeMessagesByIdAndOrigin msgId srcEndpoint (unconfirmedMessages store)
                                         return ()))
-  atomically (when (msgCode /= CodeEmpty) (queueMessage messageState (incomingMessages store)))
+  atomically (when (msgCode /= CodeEmpty) (do
+    let msgFind = findMessagesByIdAndOrigin msgId srcEndpoint
+    acked <- msgFind (ackedMessages store)
+    incoming <- msgFind (incomingMessages store)
+    unacked <- msgFind (unackedMessages store)
+    if msgType == CON && (not (null acked) || not (null incoming) || not (null unacked))
+    then queueMessage messageState (unackedMessages store)
+    else queueMessage messageState (incomingMessages store)))
 
 recvLoopError :: String -> IO ()
 recvLoopError err = putStrLn ("Error parsing message: " ++ show err ++ ", skipping")
@@ -154,19 +173,20 @@ recvLoop state@(MessagingState transport _) = do
   either recvLoopError (recvLoopSuccess state srcEndpoint) (decode msgData)
   recvLoop state
   
-sendLoop :: MessagingState -> IO ()
-sendLoop state@(MessagingState transport store) = do
-  msgState <- atomically (do
-    msgState <- takeMessageRetry (outgoingMessages store)
-    let msgType = messageType (message (messageContext msgState))
-    when (msgType == CON) (queueMessage msgState (unconfirmedMessages store))
-    return msgState)
-  let msgCtx = messageContext msgState
-  let msgData = encode (message msgCtx)
-  let origin = dstEndpoint msgCtx
-  _ <- sendTo transport msgData origin
-  sendLoop state
+sendMessageInternal :: MessagingState -> MessageState -> IO ()
+sendMessageInternal state@(MessagingState transport store) msgState = do
+  let msgCtx  = messageContext msgState
+      msg     = message msgCtx
+      msgData = encode msg
+      origin  = dstEndpoint msgCtx
+      msgType = messageType msg
 
+  atomically (do
+    when (msgType == CON) (queueMessage msgState (unconfirmedMessages store))
+    when (msgType == ACK) (queueMessage msgState (ackedMessages store)))
+
+  _ <- sendTo transport msgData origin
+  return ()
 
 createAckMessage :: UTCTime -> MessageState -> MessageState
 createAckMessage now origMessageState =
@@ -200,15 +220,13 @@ ackLoop state@(MessagingState _ store) = do
   let oldestTime = addUTCTime nomTime takeStamp
   oldMessages <- atomically (takeMessagesOlderThan oldestTime (unackedMessages store))
   if null oldMessages
-  then do
-    threadDelay 100000
-    ackLoop state
-  else do
+  then threadDelay 100000
+  else (do
     putStrLn "Timeout! Queueing ack messages"
     now <- getCurrentTime
     let ackMessages = map (createAckMessage now) oldMessages
-    atomically (queueMessages ackMessages (outgoingMessages store))
-    ackLoop state
+    mapM_ (sendMessageInternal state) ackMessages)
+  ackLoop state
 
 ackRandomFactor :: Double
 ackRandomFactor = 1.5
@@ -232,9 +250,22 @@ retransmitLoop state@(MessagingState _ store) = do
   else (do
     putStrLn ("Attempting to retransmit messages " ++ show toRetransmit)
     let adjustedMessages = filter (\s -> retransmitCount s <= maxRetransmitCount) (map (adjustRetransmissionState now) toRetransmit)
-    atomically (queueMessages adjustedMessages (outgoingMessages store)))
+    mapM_ (sendMessageInternal state) adjustedMessages)
   retransmitLoop state
-  
+
+exchangeLifetime :: Double
+exchangeLifetime = 247
+
+ackedExpirerLoop :: MessagingState -> IO ()
+ackedExpirerLoop state@(MessagingState _ store) = do
+  takeStamp <- getCurrentTime
+  let nomTime = realToFrac (-exchangeLifetime)
+  let oldestTime = addUTCTime nomTime takeStamp
+  oldMessages <- atomically (takeMessagesOlderThan oldestTime (ackedMessages store))
+  if null oldMessages
+  then threadDelay 100000
+  else putStrLn "Timeout! removed messages from duplicate detection filter"
+  ackedExpirerLoop state
 
 runLoop :: MessagingState -> (MessagingState -> IO ()) -> IO ()
 runLoop state fn = do
@@ -242,13 +273,13 @@ runLoop state fn = do
   return ()
 
 startMessaging :: MessagingState -> IO [Async ()]
-startMessaging state = mapM (async . runLoop state) [recvLoop, sendLoop, ackLoop, retransmitLoop]
+startMessaging state = mapM (async . runLoop state) [recvLoop, ackLoop, retransmitLoop, ackedExpirerLoop]
 
 stopMessaging :: MessagingState -> [Async ()] -> IO ()
 stopMessaging state = mapM_ cancel 
 
 sendMessage :: Message -> Endpoint -> MessagingState -> IO ()
-sendMessage message dstEndpoint (MessagingState transport store) = do
+sendMessage message dstEndpoint state@(MessagingState transport _) = do
   srcEndpoint <- localEndpoint transport
   now <- getCurrentTime
   initialTimeout <- randomRIO (ackTimeout, ackTimeout * ackRandomFactor)
@@ -260,7 +291,7 @@ sendMessage message dstEndpoint (MessagingState transport store) = do
                                   , insertionTime = now
                                   , replyTimeout = initialTimeout
                                   , retransmitCount = 0}
-  atomically (queueMessage messageState (outgoingMessages store))
+  sendMessageInternal state messageState
 
 recvMessageMatching :: (MessageState -> Bool) -> MessagingState -> IO MessageContext
 recvMessageMatching matchFilter (MessagingState _ store) =
