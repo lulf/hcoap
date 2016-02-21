@@ -108,22 +108,22 @@ takeMessageRetryMatching matchFilter msgListVar = do
         writeTVar msgListVar newMsgList
         return m
 
-takeMessageMatching :: (MessageState -> Bool) -> TVar MessageList -> STM (Maybe MessageState)
-takeMessageMatching matchFilter msgListVar = do
+takeMessagesMatching :: (MessageState -> Bool) -> TVar MessageList -> STM [MessageState]
+takeMessagesMatching matchFilter msgListVar = do
   msgList <- readTVar msgListVar
   if null msgList
-  then return Nothing
+  then return []
   else do
     let sortedMsgList = sortBy (comparing insertionTime) msgList
     let (foundMessages, remainingMessages) = partition matchFilter sortedMsgList
     writeTVar msgListVar remainingMessages
-    return (listToMaybe foundMessages)
+    return foundMessages
 
-takeMessageByTokenAndOrigin :: Token -> Endpoint -> TVar MessageList -> STM (Maybe MessageState)
-takeMessageByTokenAndOrigin token origin = takeMessageMatching (\x -> (origin == dstEndpoint (messageContext x)) && token == messageToken (message (messageContext x)))
+takeMessagesByTokenAndOrigin :: Token -> Endpoint -> TVar MessageList -> STM [MessageState]
+takeMessagesByTokenAndOrigin token origin = takeMessagesMatching (\x -> (origin == dstEndpoint (messageContext x)) && token == messageToken (message (messageContext x)))
 
-takeMessageByIdAndOrigin :: MessageId -> Endpoint -> TVar MessageList -> STM (Maybe MessageState)
-takeMessageByIdAndOrigin msgId origin = takeMessageMatching (\x -> (origin == dstEndpoint (messageContext x)) && (msgId == messageId (message (messageContext x))))
+takeMessagesByIdAndOrigin :: MessageId -> Endpoint -> TVar MessageList -> STM [MessageState]
+takeMessagesByIdAndOrigin msgId origin = takeMessagesMatching (\x -> (origin == dstEndpoint (messageContext x)) && (msgId == messageId (message (messageContext x))))
 
 recvLoopSuccess :: MessagingState -> Endpoint -> Message -> IO ()
 recvLoopSuccess state@(MessagingState transport store) srcEndpoint message = do
@@ -140,7 +140,7 @@ recvLoopSuccess state@(MessagingState transport store) srcEndpoint message = do
   let msgId = messageId message
   let msgType = messageType message
   let msgCode = messageCode message
-  atomically (when (msgType == ACK) (do _ <- takeMessageByIdAndOrigin msgId srcEndpoint (unconfirmedMessages store)
+  atomically (when (msgType == ACK) (do _ <- takeMessagesByIdAndOrigin msgId srcEndpoint (unconfirmedMessages store)
                                         return ()))
   atomically (when (msgCode /= CodeEmpty) (queueMessage messageState (incomingMessages store)))
 
@@ -263,12 +263,19 @@ sendMessage message dstEndpoint (MessagingState transport store) = do
   atomically (queueMessage messageState (outgoingMessages store))
 
 recvMessageMatching :: (MessageState -> Bool) -> MessagingState -> IO MessageContext
-recvMessageMatching matchFilter (MessagingState _ store) = do
-  msgState <- atomically (takeMessageRetryMatching matchFilter (incomingMessages store))
-  let msgCtx = messageContext msgState
-  let msgType = messageType (message msgCtx)
-  when (msgType == CON) (atomically (queueMessage msgState (unackedMessages store)))
-  return msgCtx
+recvMessageMatching matchFilter (MessagingState _ store) =
+  atomically (do
+    msgState <- takeMessageRetryMatching matchFilter (incomingMessages store)
+    let msgCtx = messageContext msgState
+    let msgId = messageId (message msgCtx)
+    let msgType = messageType (message msgCtx)
+    when (msgType == CON) (do
+      -- If a message with the same id and origin is already queued for ACK, consider this message a
+      -- duplicate. Enqueue it as unacked, but don't process it.
+      unacked <- takeMessagesByIdAndOrigin msgId (dstEndpoint msgCtx) (unackedMessages store)
+      mapM_ (\x -> queueMessage x (unackedMessages store)) (msgState:unacked)
+      unless (null unacked) retry)
+    return msgCtx)
 
 
 cmpMessageCode :: MessageCode -> MessageCode -> Bool
@@ -308,15 +315,15 @@ sendResponse :: MessageContext -> Message -> MessagingState -> IO ()
 sendResponse requestCtx response state@(MessagingState _ store) = do
   let origin = srcEndpoint requestCtx
   let reqToken = messageToken (message requestCtx)
-  unackedMsg <- atomically (takeMessageByTokenAndOrigin reqToken origin (unackedMessages store))  
+  unackedMsgs <- atomically (takeMessagesByTokenAndOrigin reqToken origin (unackedMessages store))  
 
-  msgId <- case unackedMsg of
-             Nothing -> allocateMessageId
-             _       -> return (messageId (message requestCtx))
+  msgId <- case unackedMsgs of
+             [] -> allocateMessageId
+             _  -> return (messageId (message requestCtx))
     
-  let outgoingMessage = case unackedMsg of
-                          Nothing -> setMessageId msgId response
-                          _       -> createAckResponse response
+  let outgoingMessage = case unackedMsgs of
+                          [] -> setMessageId msgId response
+                          _  -> createAckResponse response
 
   sendMessage outgoingMessage origin state
 
