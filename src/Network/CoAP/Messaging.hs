@@ -119,8 +119,8 @@ takeMessageMatching matchFilter msgListVar = do
     writeTVar msgListVar remainingMessages
     return (listToMaybe foundMessages)
 
-takeMessageByToken :: Token -> TVar MessageList -> STM (Maybe MessageState)
-takeMessageByToken token = takeMessageMatching (\x -> token == messageToken (message (messageContext x)))
+takeMessageByTokenAndOrigin :: Token -> Endpoint -> TVar MessageList -> STM (Maybe MessageState)
+takeMessageByTokenAndOrigin token origin = takeMessageMatching (\x -> (origin == dstEndpoint (messageContext x)) && token == messageToken (message (messageContext x)))
 
 takeMessageByIdAndOrigin :: MessageId -> Endpoint -> TVar MessageList -> STM (Maybe MessageState)
 takeMessageByIdAndOrigin msgId origin = takeMessageMatching (\x -> (origin == dstEndpoint (messageContext x)) && (msgId == messageId (message (messageContext x))))
@@ -308,7 +308,7 @@ sendResponse :: MessageContext -> Message -> MessagingState -> IO ()
 sendResponse requestCtx response state@(MessagingState _ store) = do
   let origin = srcEndpoint requestCtx
   let reqToken = messageToken (message requestCtx)
-  unackedMsg <- atomically (takeMessageByToken reqToken (unackedMessages store))  
+  unackedMsg <- atomically (takeMessageByTokenAndOrigin reqToken origin (unackedMessages store))  
 
   msgId <- case unackedMsg of
              Nothing -> allocateMessageId
