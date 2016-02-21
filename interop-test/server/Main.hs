@@ -2,21 +2,40 @@ import Network.CoAP.Server
 import Network.CoAP.Transport
 import Network.Socket
 import qualified Data.ByteString.Char8 as B
+import Control.Concurrent
 
 findPath :: [Option] -> B.ByteString
 findPath [] = B.empty
 findPath (option:options) =
-  case option of
-    UriPath value -> value
-    _             -> findPath options
+  let restPath = findPath options
+      sep      = if B.null restPath then B.empty else B.pack "/"
+   in case option of
+        UriPath value -> B.append value (B.append sep restPath)
+        _             -> findPath options
+
 
 requestHandler :: RequestHandler
-requestHandler (request, _) = do
+requestHandler req@(request, _) = do
   let options = requestOptions request
   let path = B.unpack (findPath options)
-  if path == ".well-known/core"
-  then return (Response Content [ContentFormat ApplicationLinkFormat] Nothing)
-  else return (Response Content [ContentFormat ApplicationJson] (Just (B.pack ("{\"path\":\"hello\"}"))))
+  putStrLn ("Options are: " ++ show options)
+  putStrLn ("Path is : " ++ show path)
+  case path of
+    ".well-known/core" -> handleCore req
+    "test"             -> handleTest req
+    "separate"         -> handleSeparate req
+    _                  -> error ("Unknown path " ++ show path)
+
+handleCore :: RequestHandler
+handleCore req = return (Response Content [ContentFormat ApplicationLinkFormat] Nothing)
+
+handleTest :: RequestHandler
+handleTest req = return (Response Content [ContentFormat ApplicationJson] (Just (B.pack ("{\"test\":\"hello\"}"))))
+
+handleSeparate ::RequestHandler
+handleSeparate req = do
+  threadDelay 3000000
+  return (Response Content [ContentFormat ApplicationJson] (Just (B.pack ("{\"separate\":\"hello\"}"))))
               
 
 main :: IO ()
