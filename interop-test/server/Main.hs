@@ -13,9 +13,10 @@ findPath (option:options) =
 requestHandler :: RequestHandler
 requestHandler (request, _) = do
   let options = requestOptions request
-  let path = findPath options
-  let payload = Just (B.pack ("{\"path\":\"" ++ B.unpack path ++ "\"}"))
-  return (Response Content [ContentFormat ApplicationJson] payload)
+  let path = B.unpack (findPath options)
+  if path == ".well-known/core"
+  then return (Response Content [ContentFormat ApplicationLinkFormat] Nothing)
+  else return (Response Content [ContentFormat ApplicationJson] (Just (B.pack ("{\"path\":\"hello\"}"))))
               
 
 main :: IO ()
