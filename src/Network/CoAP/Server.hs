@@ -83,7 +83,6 @@ requestLoop state requestHandler = do
   let mtype = messageType (message requestCtx)
   -- putStrLn ("Received new request with mid " ++ show mid ++ ", type " ++ show mtype ++ ", and token " ++ show token)
   _ <- async (handleRequest requestCtx requestHandler state)
-  handleRequest requestCtx requestHandler state
   requestLoop state requestHandler
 
 createResponseMessage :: Message -> Response -> Message
