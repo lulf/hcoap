@@ -77,9 +77,13 @@ handleRequest requestCtx requestHandler state = do
 
 requestLoop :: MessagingState -> RequestHandler -> IO ()
 requestLoop state requestHandler = do
-  {-putStrLn "Waiting for incoming message"-}
   requestCtx <- recvRequest state
+  let mid = messageId (message requestCtx)
+  let token = messageToken (message requestCtx)
+  let mtype = messageType (message requestCtx)
+  -- putStrLn ("Received new request with mid " ++ show mid ++ ", type " ++ show mtype ++ ", and token " ++ show token)
   _ <- async (handleRequest requestCtx requestHandler state)
+  handleRequest requestCtx requestHandler state
   requestLoop state requestHandler
 
 createResponseMessage :: Message -> Response -> Message

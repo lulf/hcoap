@@ -129,13 +129,13 @@ findMessagesMatching matchFilter msgListVar = do
     let (foundMessages, _) = partition matchFilter sortedMsgList
     return foundMessages
 
-takeMessagesByTokenAndOrigin :: Token -> Endpoint -> TVar MessageList -> STM [MessageState]
-takeMessagesByTokenAndOrigin token origin = takeMessagesMatching (\x -> (origin == dstEndpoint (messageContext x)) && token == messageToken (message (messageContext x)))
+takeMessagesByTokenAndSender :: Token -> Endpoint -> TVar MessageList -> STM [MessageState]
+takeMessagesByTokenAndSender token sender = takeMessagesMatching (\x -> (sender == srcEndpoint (messageContext x)) && token == messageToken (message (messageContext x)))
 
-takeMessagesByIdAndOrigin :: MessageId -> Endpoint -> TVar MessageList -> STM [MessageState]
-takeMessagesByIdAndOrigin msgId origin = takeMessagesMatching (\x -> (origin == dstEndpoint (messageContext x)) && (msgId == messageId (message (messageContext x))))
+takeMessagesByIdAndReceiver :: MessageId -> Endpoint -> TVar MessageList -> STM [MessageState]
+takeMessagesByIdAndReceiver msgId receiver = takeMessagesMatching (\x -> (receiver == dstEndpoint (messageContext x)) && (msgId == messageId (message (messageContext x))))
 
-findMessagesByIdAndOrigin msgId origin = findMessagesMatching (\x -> (origin == dstEndpoint (messageContext x)) && (msgId == messageId (message (messageContext x))))
+findMessagesByIdAndSender msgId sender = findMessagesMatching (\x -> (sender == srcEndpoint (messageContext x)) && (msgId == messageId (message (messageContext x))))
 
 recvLoopSuccess :: MessagingState -> Endpoint -> Message -> IO ()
 recvLoopSuccess state@(MessagingState transport store) srcEndpoint message = do
@@ -152,10 +152,10 @@ recvLoopSuccess state@(MessagingState transport store) srcEndpoint message = do
   let msgId = messageId message
   let msgType = messageType message
   let msgCode = messageCode message
-  atomically (when (msgType == ACK) (do _ <- takeMessagesByIdAndOrigin msgId srcEndpoint (unconfirmedMessages store)
+  atomically (when (msgType == ACK) (do _ <- takeMessagesByIdAndReceiver msgId srcEndpoint (unconfirmedMessages store)
                                         return ()))
   atomically (when (msgCode /= CodeEmpty) (do
-    let msgFind = findMessagesByIdAndOrigin msgId srcEndpoint
+    let msgFind = findMessagesByIdAndSender msgId srcEndpoint
     acked <- msgFind (ackedMessages store)
     incoming <- msgFind (incomingMessages store)
     unacked <- msgFind (unackedMessages store)
@@ -197,7 +197,7 @@ createAckMessage now origMessageState =
                            , messageType = ACK
                            , messageCode = CodeEmpty
                            , messageId = messageId origMessage
-                           , messageToken = empty
+                           , messageToken = messageToken origMessage
                            , messageOptions = []
                            , messagePayload = Nothing }
       newCtx = MessageContext { message = newMessage
@@ -213,6 +213,9 @@ createAckMessage now origMessageState =
 ackTimeout :: Double
 ackTimeout = 2
 
+maxAckWait :: Double
+maxAckWait = 0.5
+
 ackLoop :: MessagingState -> IO ()
 ackLoop state@(MessagingState _ store) = do
   takeStamp <- getCurrentTime
@@ -222,9 +225,9 @@ ackLoop state@(MessagingState _ store) = do
   if null oldMessages
   then threadDelay 100000
   else (do
-    putStrLn "Timeout! Queueing ack messages"
     now <- getCurrentTime
     let ackMessages = map (createAckMessage now) oldMessages
+    putStrLn ("Timeout! Sending ack messages" ++ show ackMessages)
     mapM_ (sendMessageInternal state) ackMessages)
   ackLoop state
 
@@ -300,13 +303,14 @@ recvMessageMatching matchFilter (MessagingState _ store) =
     let msgCtx = messageContext msgState
     let msgId = messageId (message msgCtx)
     let msgType = messageType (message msgCtx)
-    when (msgType == CON) (do
-      -- If a message with the same id and origin is already queued for ACK, consider this message a
-      -- duplicate. Enqueue it as unacked, but don't process it.
-      unacked <- takeMessagesByIdAndOrigin msgId (dstEndpoint msgCtx) (unackedMessages store)
-      mapM_ (\x -> queueMessage x (unackedMessages store)) (msgState:unacked)
-      unless (null unacked) retry)
+    when (msgType == CON) (queueMessage msgState (unackedMessages store))
     return msgCtx)
+--      -- If a message with the same id and origin is already queued for ACK, consider this message a
+--      -- duplicate. Enqueue it as unacked, but don't process it.
+--      unacked <- takeMessagesByIdAndSender msgId (dstEndpoint msgCtx) (unackedMessages store)
+--      mapM_ (\x -> queueMessage x (unackedMessages store)) (msgState:unacked)
+--      unless (null unacked) retry)
+--    return msgCtx)
 
 
 cmpMessageCode :: MessageCode -> MessageCode -> Bool
@@ -346,8 +350,10 @@ sendResponse :: MessageContext -> Message -> MessagingState -> IO ()
 sendResponse requestCtx response state@(MessagingState _ store) = do
   let origin = srcEndpoint requestCtx
   let reqToken = messageToken (message requestCtx)
-  unackedMsgs <- atomically (takeMessagesByTokenAndOrigin reqToken origin (unackedMessages store))  
+  unackedMsgs <- atomically (takeMessagesByTokenAndSender reqToken origin (unackedMessages store))  
 
+  unacked <- atomically (readTVar (unackedMessages store))
+  --putStrLn ("Unacked messages at time of sending response: " ++ show unacked)
   msgId <- case unackedMsgs of
              [] -> allocateMessageId
              _  -> return (messageId (message requestCtx))
@@ -355,7 +361,11 @@ sendResponse requestCtx response state@(MessagingState _ store) = do
   let outgoingMessage = case unackedMsgs of
                           [] -> setMessageId msgId response
                           _  -> createAckResponse response
-
+  
+  let mid = messageId outgoingMessage
+  let token = messageToken outgoingMessage
+  let mtype = messageType outgoingMessage
+  -- putStrLn ("Sending response with mid " ++ show mid ++ ", type " ++ show mtype ++ ", token " ++ show token ++ ", origin " ++ show origin)
   sendMessage outgoingMessage origin state
 
 sendRequest :: Message -> Endpoint -> MessagingState -> IO ()

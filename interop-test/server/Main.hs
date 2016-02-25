@@ -34,7 +34,7 @@ handleTest req = return (Response Content [ContentFormat ApplicationJson] (Just 
 
 handleSeparate ::RequestHandler
 handleSeparate req = do
-  threadDelay 3000000
+  threadDelay 1000000
   return (Response Content [ContentFormat ApplicationJson] (Just (B.pack ("{\"separate\":\"hello\"}"))))
               
 
