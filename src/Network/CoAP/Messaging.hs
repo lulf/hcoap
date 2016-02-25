@@ -216,6 +216,7 @@ ackTimeout = 2
 maxAckWait :: Double
 maxAckWait = 0.5
 
+-- TODO: Get rid of this and make ack explicitly handled by server, or make timeout configurable
 ackLoop :: MessagingState -> IO ()
 ackLoop state@(MessagingState _ store) = do
   takeStamp <- getCurrentTime
