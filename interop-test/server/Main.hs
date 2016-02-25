@@ -18,12 +18,16 @@ requestHandler :: RequestHandler
 requestHandler req@(request, _) = do
   let options = requestOptions request
   let path = B.unpack (findPath options)
-  putStrLn ("Options are: " ++ show options)
-  putStrLn ("Path is : " ++ show path)
   case path of
     ".well-known/core" -> handleCore req
     "test"             -> handleTest req
     "separate"         -> handleSeparate req
+    "seg1/seg2/seg3"   -> handleSeg req
+    "query"            -> handleQuery req
+    "location-query"   -> handleLocationQuery req
+    "multi-format"     -> handleMultiFormat req
+    "validate"         -> handleValidate req
+    "create1"          -> handleCreate1 req
     _                  -> error ("Unknown path " ++ show path)
 
 handleCore :: RequestHandler
@@ -37,6 +41,23 @@ handleSeparate req = do
   threadDelay 1000000
   return (Response Content [ContentFormat ApplicationJson] (Just (B.pack ("{\"separate\":\"hello\"}"))))
               
+handleSeg :: RequestHandler
+handleSeg req = return (Response Content [ContentFormat ApplicationJson] (Just (B.pack ("{\"Seg\":\"hello\"}"))))
+
+handleQuery :: RequestHandler
+handleQuery req = return (Response Content [ContentFormat ApplicationJson] (Just (B.pack ("{\"Query\":\"hello\"}"))))
+
+handleLocationQuery :: RequestHandler
+handleLocationQuery req = return (Response Content [ContentFormat ApplicationJson] (Just (B.pack ("{\"LocationQuery\":\"hello\"}"))))
+
+handleMultiFormat :: RequestHandler
+handleMultiFormat req = return (Response Content [ContentFormat ApplicationJson] (Just (B.pack ("{\"MultiFormat\":\"hello\"}"))))
+
+handleValidate :: RequestHandler
+handleValidate req = return (Response Content [ContentFormat ApplicationJson] (Just (B.pack ("{\"Validate\":\"hello\"}"))))
+
+handleCreate1 :: RequestHandler
+handleCreate1 req = return (Response Content [ContentFormat ApplicationJson] (Just (B.pack ("{\"Create1\":\"hello\"}"))))
 
 main :: IO ()
 main =
