@@ -13,7 +13,6 @@ description:         CoAP library for writing CoAP clients, servers or just for 
                      CoAP messages. The Network.CoAP.Server and Network.CoAP.Client modules allows
                      building CoAP servers and clients on top of a messaging layer which provides
                      reliable transport of CoAP requests/responses.
-synopsis:            CoAP implementation for Haskell.
 stability:           experimental 
 cabal-version:       >=1.10
 
@@ -25,16 +24,16 @@ library
 
   build-depends:       base >= 4 && < 5,
                        bytestring >= 0.10 && < 0.11,
-                       binary >= 0.7 && < 0.8,
+                       binary >= 0.8 && < 0.9,
                        network >= 2.6 && < 2.7,
                        stm >= 2.4 && < 2.5,
                        mtl >= 2.1 && < 2.3,
-                       time >= 1.4 && < 1.6,
+                       time >= 1.8 && < 1.9,
                        random >= 1.1 && < 2,
                        async >= 2.0 && < 3,
                        network-uri >= 2.6 && < 3,
                        iproute >= 1.3 && < 2,
-                       dns >= 2 && < 3
+                       dns >= 3 && < 4
   hs-source-dirs:      src
   default-language:    Haskell2010
 

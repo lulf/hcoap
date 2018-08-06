@@ -1,6 +1,4 @@
 flags: {}
 packages:
-- '.'
-extra-deps:
-- dns-2.0.1
-resolver: lts-5.1
+- .
+resolver: lts-12.5
