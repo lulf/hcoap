@@ -39,9 +39,9 @@ import Network.CoAP.Internal
                     
 -- | A client that can perform CoAP requests.
 data Client = Client { -- | Send a CoAP request to a given endpoint represented by an URI. Returns a CoAP response.
-                       doRequest :: URI -> Request -> IO Response
+                       doRequest :: URI -> Request -> IO (Either String Response)
                        -- | Send a CoAP request to a given endpoint. Returns a CoAP response.
-                     , doRawRequest :: Endpoint -> Request -> IO Response
+                     , doRawRequest :: Endpoint -> Request -> IO (Either String Response)
                        -- | Stop a client. Ensures that no threads are running and that messaging
                        -- layer is shut down.
                      , shutdownClient :: IO () }
@@ -69,13 +69,13 @@ generateToken len = do
   next <- generateToken (len - 1)
   return (tkn:next)
 
-doRequestInternal :: MessagingState -> URI -> Request -> IO Response
+doRequestInternal :: MessagingState -> URI -> Request -> IO (Either String Response)
 doRequestInternal state uri (Request method options payload reliable) = do
   dest <- createEndpoint uri
   let newOpts = createOpts uri
   doRawRequestInternal state dest (Request method (options ++ newOpts) payload reliable)
 
-doRawRequestInternal :: MessagingState -> Endpoint -> Request -> IO Response
+doRawRequestInternal :: MessagingState -> Endpoint -> Request -> IO (Either String Response)
 doRawRequestInternal state dest (Request method options payload reliable) = do
   tokenLen <- randomRIO (0, 8)
   token <- generateToken tokenLen
@@ -86,9 +86,14 @@ doRawRequestInternal state dest (Request method options payload reliable) = do
                     , messageToken = pack token
                     , messageOptions = options
                     , messagePayload = payload }
-  sendRequest msg dest state
-  responseCtx <- recvResponse msg dest state
-  let (Message _ _ (CodeResponse rCode) _ _ opts pload) = message responseCtx
-  return Response { responseCode = rCode
-                  , responseOptions = opts
-                  , responsePayload = pload }
+  sendMessage msg dest state
+  eitherMsg <- recvMessage state
+  case eitherMsg of
+    Left err -> do
+      putStrLn $ "Error receiving response: " ++ (show err)
+      return $ Left err
+    Right msgCtx -> do
+      let (Message _ _ (CodeResponse rCode) _ _ opts pload) = message msgCtx
+      return (Right (Response { responseCode = rCode
+                              , responseOptions = opts
+                              , responsePayload = pload }))

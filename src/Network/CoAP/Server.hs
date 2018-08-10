@@ -73,17 +73,26 @@ handleRequest requestCtx requestHandler state = do
   response <- requestHandler (request, srcEndpoint requestCtx)
   {-putStrLn ("Produced response: " ++ (show response))-}
   let responseMsg = createResponseMessage (message requestCtx) response
-  sendResponse requestCtx responseMsg state
+  sendMessage responseMsg (srcEndpoint requestCtx) state
 
 requestLoop :: MessagingState -> RequestHandler -> IO ()
 requestLoop state requestHandler = do
-  requestCtx <- recvRequest state
-  let mid = messageId (message requestCtx)
-  let token = messageToken (message requestCtx)
-  let mtype = messageType (message requestCtx)
-  -- putStrLn ("Received new request with mid " ++ show mid ++ ", type " ++ show mtype ++ ", and token " ++ show token)
-  _ <- async (handleRequest requestCtx requestHandler state)
-  requestLoop state requestHandler
+  eitherMsg <- recvMessage state
+  case eitherMsg of
+    Left err -> do
+      putStrLn ("Error receiving message: " ++ (show err) ++ ", retrying")
+      requestLoop state requestHandler
+    Right msgCtx -> do
+      let mid = messageId (message msgCtx)
+      let token = messageToken (message msgCtx)
+      let mtype = messageType (message msgCtx)
+      let code = messageCode (message msgCtx)
+      -- putStrLn ("Received new request with mid " ++ show mid ++ ", type " ++ show mtype ++ ", and token " ++ show token)
+      case code of
+        CodeRequest _ -> do
+          handleRequest msgCtx requestHandler state
+          requestLoop state requestHandler
+        _ -> requestLoop state requestHandler
 
 createResponseMessage :: Message -> Response -> Message
 createResponseMessage origMsg response =

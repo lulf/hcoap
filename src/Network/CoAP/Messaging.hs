@@ -3,10 +3,8 @@ module Network.CoAP.Messaging
 , MessagingState
 , startMessaging
 , stopMessaging
-, recvRequest
-, sendResponse
-, sendRequest
-, recvResponse
+, recvMessage
+, sendMessage
 ) where
 import Network.CoAP.Types
 import Network.CoAP.MessageCodec
@@ -137,41 +135,62 @@ takeMessagesByIdAndReceiver msgId receiver = takeMessagesMatching (\x -> (receiv
 
 findMessagesByIdAndSender msgId sender = findMessagesMatching (\x -> (sender == srcEndpoint (messageContext x)) && (msgId == messageId (message (messageContext x))))
 
-recvLoopSuccess :: MessagingState -> Endpoint -> Message -> IO ()
-recvLoopSuccess state@(MessagingState transport store) srcEndpoint message = do
-  dstEndpoint <- localEndpoint transport
-  now <- getCurrentTime
-
-  let messageCtx = MessageContext { message = message
-                                  , srcEndpoint = srcEndpoint
-                                  , dstEndpoint = dstEndpoint }
+enqueueForAck :: MessagingStore -> MessageContext -> UTCTime -> STM (Maybe MessageContext)
+enqueueForAck store messageCtx@(MessageContext message srcEndpoint _) now = do
   let messageState = MessageState { messageContext = messageCtx 
                                   , insertionTime = now
                                   , replyTimeout = 0
                                   , retransmitCount = 0 }
   let msgId = messageId message
   let msgType = messageType message
+
+  let msgFind = findMessagesByIdAndSender msgId srcEndpoint
+  acked <- msgFind (ackedMessages store)
+  unacked <- msgFind (unackedMessages store)
+  if msgType == CON && (not (null acked) || not (null unacked))
+  then do
+    queueMessage messageState (unackedMessages store)
+    return Nothing
+  else return $ Just messageCtx
+
+
+processMessage :: MessagingState -> Endpoint -> Message -> IO (Maybe MessageContext)
+processMessage state@(MessagingState transport store) srcEndpoint message = do
+  dstEndpoint <- localEndpoint transport
+  now <- getCurrentTime
+
+  let messageCtx = MessageContext { message = message
+                                  , srcEndpoint = srcEndpoint
+                                  , dstEndpoint = dstEndpoint }
+
+  let msgId = messageId message
+  let msgType = messageType message
   let msgCode = messageCode message
-  atomically (when (msgType == ACK) (do _ <- takeMessagesByIdAndReceiver msgId srcEndpoint (unconfirmedMessages store)
-                                        return ()))
-  atomically (when (msgCode /= CodeEmpty) (do
-    let msgFind = findMessagesByIdAndSender msgId srcEndpoint
-    acked <- msgFind (ackedMessages store)
-    incoming <- msgFind (incomingMessages store)
-    unacked <- msgFind (unackedMessages store)
-    if msgType == CON && (not (null acked) || not (null incoming) || not (null unacked))
-    then queueMessage messageState (unackedMessages store)
-    else queueMessage messageState (incomingMessages store)))
+  if (msgType == ACK)
+  then atomically $ do
+    _ <- takeMessagesByIdAndReceiver msgId srcEndpoint (unconfirmedMessages store)
+    return Nothing
+  else if (msgCode /= CodeEmpty)
+       then atomically $ enqueueForAck store messageCtx now
+       else return Nothing
 
 recvLoopError :: String -> IO ()
 recvLoopError err = putStrLn ("Error parsing message: " ++ show err ++ ", skipping")
 
-recvLoop :: MessagingState -> IO ()
-recvLoop state@(MessagingState transport _) = do
+recvMessage :: MessagingState -> IO (Either String MessageContext)
+recvMessage state@(MessagingState transport _) = do
   {-putStrLn "Waiting for UDP packet"-}
   (msgData, srcEndpoint) <- recvFrom transport
-  either recvLoopError (recvLoopSuccess state srcEndpoint) (decode msgData)
-  recvLoop state
+  let m = decode msgData
+  case m of
+    Left e -> return $ Left e
+    Right msg -> (do
+      maybeCtx <- processMessage state srcEndpoint msg
+      case maybeCtx of
+        Nothing -> recvMessage state
+        Just ctx -> return $ Right ctx)
+--    
+--  return $ either recvLoopError (recvLoopSuccess state srcEndpoint) (decode msgData)
   
 sendMessageInternal :: MessagingState -> MessageState -> IO ()
 sendMessageInternal state@(MessagingState transport store) msgState = do
@@ -277,18 +296,34 @@ runLoop state fn = do
   return ()
 
 startMessaging :: MessagingState -> IO [Async ()]
-startMessaging state = mapM (async . runLoop state) [recvLoop, ackLoop, retransmitLoop, ackedExpirerLoop]
+startMessaging state = mapM (async . runLoop state) [ackLoop, retransmitLoop, ackedExpirerLoop]
 
 stopMessaging :: MessagingState -> [Async ()] -> IO ()
 stopMessaging state = mapM_ cancel 
 
 sendMessage :: Message -> Endpoint -> MessagingState -> IO ()
-sendMessage message dstEndpoint state@(MessagingState transport _) = do
+sendMessage msg dstEndpoint state@(MessagingState transport store) = do
+  -- Check if this message has not been acked yet and use the message id corresponded to the
+  -- requested ack
+  let reqToken = messageToken msg
+  unackedMsgs <- atomically (takeMessagesByTokenAndSender reqToken dstEndpoint (unackedMessages store))  
+
+  -- unacked <- atomically (readTVar (unackedMessages store))
+  -- putStrLn ("Unacked messages at time of sending response: " ++ show unacked)
+  msgId <- case unackedMsgs of
+             [] -> allocateMessageId
+             _  -> return (messageId msg)
+    
+  let outgoingMessage = case unackedMsgs of
+                          [] -> setMessageId msgId msg
+                          _  -> createAckResponse msg
+
   srcEndpoint <- localEndpoint transport
   now <- getCurrentTime
   initialTimeout <- randomRIO (ackTimeout, ackTimeout * ackRandomFactor)
+
   {-putStrLn ("Queueing message " ++ (show message) ++ " for sending")-}
-  let ctx = MessageContext { message = message
+  let ctx = MessageContext { message = msg
                            , srcEndpoint = srcEndpoint
                            , dstEndpoint = dstEndpoint }
   let messageState = MessageState { messageContext = ctx
@@ -297,31 +332,11 @@ sendMessage message dstEndpoint state@(MessagingState transport _) = do
                                   , retransmitCount = 0}
   sendMessageInternal state messageState
 
-recvMessageMatching :: (MessageState -> Bool) -> MessagingState -> IO MessageContext
-recvMessageMatching matchFilter (MessagingState _ store) =
-  atomically (do
-    msgState <- takeMessageRetryMatching matchFilter (incomingMessages store)
-    let msgCtx = messageContext msgState
-    let msgId = messageId (message msgCtx)
-    let msgType = messageType (message msgCtx)
-    when (msgType == CON) (queueMessage msgState (unackedMessages store))
-    return msgCtx)
---      -- If a message with the same id and origin is already queued for ACK, consider this message a
---      -- duplicate. Enqueue it as unacked, but don't process it.
---      unacked <- takeMessagesByIdAndSender msgId (dstEndpoint msgCtx) (unackedMessages store)
---      mapM_ (\x -> queueMessage x (unackedMessages store)) (msgState:unacked)
---      unless (null unacked) retry)
---    return msgCtx)
-
-
 cmpMessageCode :: MessageCode -> MessageCode -> Bool
 cmpMessageCode (CodeRequest _) (CodeRequest _) = True
 cmpMessageCode (CodeResponse _) (CodeResponse _) = True
 cmpMessageCode CodeEmpty CodeEmpty = True
 cmpMessageCode _ _ = False
-
-recvRequest :: MessagingState -> IO MessageContext
-recvRequest = recvMessageMatching (cmpMessageCode (CodeRequest GET) . messageCode . message . messageContext)
 
 createAckResponse :: Message -> Message
 createAckResponse response =
@@ -345,43 +360,3 @@ setMessageId msgId response =
 
 allocateMessageId :: IO MessageId
 allocateMessageId = randomIO
-  
-
-sendResponse :: MessageContext -> Message -> MessagingState -> IO ()
-sendResponse requestCtx response state@(MessagingState _ store) = do
-  let origin = srcEndpoint requestCtx
-  let reqToken = messageToken (message requestCtx)
-  unackedMsgs <- atomically (takeMessagesByTokenAndSender reqToken origin (unackedMessages store))  
-
-  unacked <- atomically (readTVar (unackedMessages store))
-  --putStrLn ("Unacked messages at time of sending response: " ++ show unacked)
-  msgId <- case unackedMsgs of
-             [] -> allocateMessageId
-             _  -> return (messageId (message requestCtx))
-    
-  let outgoingMessage = case unackedMsgs of
-                          [] -> setMessageId msgId response
-                          _  -> createAckResponse response
-  
-  let mid = messageId outgoingMessage
-  let token = messageToken outgoingMessage
-  let mtype = messageType outgoingMessage
-  -- putStrLn ("Sending response with mid " ++ show mid ++ ", type " ++ show mtype ++ ", token " ++ show token ++ ", origin " ++ show origin)
-  sendMessage outgoingMessage origin state
-
-sendRequest :: Message -> Endpoint -> MessagingState -> IO ()
-sendRequest (Message msgVersion msgType msgCode _ tkn opts payload) msgdest state = do
-  msgId <- allocateMessageId
-  let msg = Message { messageVersion = msgVersion
-                    , messageType = msgType
-                    , messageCode = msgCode
-                    , messageId = msgId
-                    , messageToken = tkn
-                    , messageOptions = opts
-                    , messagePayload = payload }
-  sendMessage msg msgdest state
-
-recvResponse :: Message -> Endpoint -> MessagingState -> IO MessageContext
-recvResponse reqMessage endpoint = recvMessageMatching matchFilter
-  where matchFilter x = cmpMessageCode (CodeResponse Created) (messageCode (message (messageContext x))) && messageToken reqMessage == messageToken (message (messageContext x))
-
