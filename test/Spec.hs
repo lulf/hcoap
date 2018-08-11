@@ -4,6 +4,7 @@ import qualified Network.CoAP.Client as C
 import Network.CoAP.Transport
 import Network.Socket hiding (sendTo, recvFrom)
 import Test.HUnit
+import Data.Either
 import Data.ByteString.Char8 hiding (putStrLn)
 import Test.QuickCheck
 import Prelude hiding (null, length)
@@ -60,8 +61,10 @@ testReliability =
     mapM_ (\req -> do
       response <- timeout 20000000 (C.doRawRequest client endpointA req)
       assertBool ("Timed out waiting for response on reliable request " ++ show req) (isJust response)
-      let res = fromJust response
-      putStrLn "Got response, checking"
+      let eitherResponse = fromJust response
+      assertBool ("Got error instead of response") (isRight eitherResponse)
+      let (res:_) = rights [eitherResponse]
+      -- putStrLn $ "Got response, checking " ++ (show res)
       assertEqual "Bad response code" C.Created (C.responseCode res)
       assertEqual "Bad payload" "Hello, Client" (unpack (fromJust (C.responsePayload res)))
       ) reqs
