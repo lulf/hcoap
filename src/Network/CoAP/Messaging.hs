@@ -1,10 +1,12 @@
 module Network.CoAP.Messaging
 ( createMessagingState
 , MessagingState
-, startMessaging
-, stopMessaging
 , recvMessage
 , sendMessage
+, ackMessage
+, checkAcks
+, checkRetransmits
+, checkExpired
 ) where
 import Network.CoAP.Types
 import Network.CoAP.MessageCodec
@@ -16,7 +18,6 @@ import Data.ByteString (empty)
 import Control.Concurrent.STM
 import Control.Concurrent
 import Control.Exception
-import Control.Concurrent.Async
 import Data.Maybe
 import Data.Time
 import System.Random
@@ -235,21 +236,40 @@ ackTimeout = 2
 maxAckWait :: Double
 maxAckWait = 0.5
 
--- TODO: Get rid of this and make ack explicitly handled by server, or make timeout configurable
-ackLoop :: MessagingState -> IO ()
-ackLoop state@(MessagingState _ store) = do
-  takeStamp <- getCurrentTime
+ackMessage :: Message -> Endpoint -> MessagingState -> IO ()
+ackMessage msg dstEndpoint state@(MessagingState transport store) = do
+  let reqToken = messageToken msg
+  unackedMsgs <- atomically (takeMessagesByTokenAndSender reqToken dstEndpoint (unackedMessages store))  
+  srcEndpoint <- localEndpoint transport
+  now <- getCurrentTime
+  case unackedMsgs of
+    [] -> return () -- Already acked
+    _  -> do
+      let ack = createAckResponse msg
+      let ctx = MessageContext { message = msg
+                               , srcEndpoint = srcEndpoint
+                               , dstEndpoint = dstEndpoint }
+      let messageState = MessageState { messageContext = ctx
+                                      , insertionTime = now
+                                      , replyTimeout = 0
+                                      , retransmitCount = 0}
+      sendMessageInternal state messageState
+
+
+checkAcks :: MessagingState -> IO Bool
+checkAcks state@(MessagingState _ store) = do
+  now <- getCurrentTime
   let nomTime = realToFrac (-ackTimeout)
-  let oldestTime = addUTCTime nomTime takeStamp
+  let oldestTime = addUTCTime nomTime now
   oldMessages <- atomically (takeMessagesOlderThan oldestTime (unackedMessages store))
   if null oldMessages
-  then threadDelay 100000
+  then return False
   else (do
-    now <- getCurrentTime
-    let ackMessages = map (createAckMessage now) oldMessages
+    nowInsert <- getCurrentTime
+    let ackMessages = map (createAckMessage nowInsert) oldMessages
     putStrLn ("Timeout! Sending ack messages" ++ show ackMessages)
-    mapM_ (sendMessageInternal state) ackMessages)
-  ackLoop state
+    mapM_ (sendMessageInternal state) ackMessages
+    return True)
 
 ackRandomFactor :: Double
 ackRandomFactor = 1.5
@@ -264,42 +284,33 @@ adjustRetransmissionState now msgState =
                , replyTimeout = replyTimeout msgState * 2
                , retransmitCount = retransmitCount msgState + 1 }
 
-retransmitLoop :: MessagingState -> IO ()
-retransmitLoop state@(MessagingState _ store) = do
+checkRetransmits :: MessagingState -> IO Bool
+checkRetransmits state@(MessagingState _ store) = do
   now <- getCurrentTime
   toRetransmit <- atomically (takeMessagesToRetransmit now (unconfirmedMessages store))
   if null toRetransmit
-  then threadDelay 100000
+  then return False
   else (do
+    retransmitNow <- getCurrentTime
     putStrLn ("Attempting to retransmit messages " ++ show toRetransmit)
-    let adjustedMessages = filter (\s -> retransmitCount s <= maxRetransmitCount) (map (adjustRetransmissionState now) toRetransmit)
-    mapM_ (sendMessageInternal state) adjustedMessages)
-  retransmitLoop state
+    let adjustedMessages = filter (\s -> retransmitCount s <= maxRetransmitCount) (map (adjustRetransmissionState retransmitNow) toRetransmit)
+    mapM_ (sendMessageInternal state) adjustedMessages
+    return True)
 
 exchangeLifetime :: Double
 exchangeLifetime = 247
 
-ackedExpirerLoop :: MessagingState -> IO ()
-ackedExpirerLoop state@(MessagingState _ store) = do
-  takeStamp <- getCurrentTime
+checkExpired :: MessagingState -> IO Bool
+checkExpired state@(MessagingState _ store) = do
+  now <- getCurrentTime
   let nomTime = realToFrac (-exchangeLifetime)
-  let oldestTime = addUTCTime nomTime takeStamp
+  let oldestTime = addUTCTime nomTime now 
   oldMessages <- atomically (takeMessagesOlderThan oldestTime (ackedMessages store))
   if null oldMessages
-  then threadDelay 100000
-  else putStrLn "Timeout! removed messages from duplicate detection filter"
-  ackedExpirerLoop state
-
-runLoop :: MessagingState -> (MessagingState -> IO ()) -> IO ()
-runLoop state fn = do
-  err <- try (fn state) :: IO (Either AsyncException ())
-  return ()
-
-startMessaging :: MessagingState -> IO [Async ()]
-startMessaging state = mapM (async . runLoop state) [ackLoop, retransmitLoop, ackedExpirerLoop]
-
-stopMessaging :: MessagingState -> [Async ()] -> IO ()
-stopMessaging state = mapM_ cancel 
+  then return False
+  else (do
+    putStrLn "Timeout! removed messages from duplicate detection filter"
+    return True)
 
 sendMessage :: Message -> Endpoint -> MessagingState -> IO ()
 sendMessage msg dstEndpoint state@(MessagingState transport store) = do

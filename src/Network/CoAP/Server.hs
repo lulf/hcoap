@@ -29,8 +29,10 @@ module Network.CoAP.Server
 
 import Network.CoAP.Messaging
 import Network.CoAP.Types
+import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Concurrent.STM
+import Control.Exception
 import Network.Socket
 
 -- | A request handler for a CoAP request. The request may be called by multiple threads
@@ -41,19 +43,34 @@ type RequestHandler = (Request, Endpoint) -> IO Response
 data Server = Server { runServer :: IO ()
                      , stopServer :: IO () }
                        
+startLoop :: MessagingState -> (MessagingState -> IO ()) -> IO ()
+startLoop state fn = do
+  err <- try (fn state) :: IO (Either AsyncException ())
+  return ()
+
+checkLoop :: MessagingState -> IO ()
+checkLoop state = do
+  didAcks <- checkAcks state
+  didRetransmit <- checkRetransmits state
+  didExpired <- checkExpired state
+  if didAcks || didRetransmit || didExpired
+  then checkLoop state
+  else do
+    threadDelay 100000
+    checkLoop state
 
 -- | Create a CoAP server with a given transport and request handler
 createServer :: Transport -> RequestHandler -> IO Server
 createServer transport handler = do
   state <- createMessagingState transport
-  msgThreads <- startMessaging state
+  checkThread <- (async . startLoop state) checkLoop
   return Server { runServer = requestLoop state handler
-                , stopServer = shutdownServer state msgThreads }
+                , stopServer = shutdownServer state [checkThread] }
 
 -- | Shutdown a CoAP server.
 shutdownServer :: MessagingState -> [Async ()] -> IO ()
 shutdownServer state threads = do
-  stopMessaging state threads
+  mapM_ cancel threads
   mapM_ wait threads
 
 createRequest :: MessageContext -> Request

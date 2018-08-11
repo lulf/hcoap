@@ -28,8 +28,10 @@ module Network.CoAP.Client
 import Network.CoAP.Messaging
 import Network.CoAP.Types
 import Control.Monad.State
+import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Concurrent.STM
+import Control.Exception
 import Network.Socket
 import Data.ByteString hiding (putStrLn)
 import Data.Word
@@ -46,20 +48,36 @@ data Client = Client { -- | Send a CoAP request to a given endpoint represented 
                        -- layer is shut down.
                      , shutdownClient :: IO () }
 
+startLoop :: MessagingState -> (MessagingState -> IO ()) -> IO ()
+startLoop state fn = do
+  err <- try (fn state) :: IO (Either AsyncException ())
+  return ()
+
+checkLoop :: MessagingState -> IO ()
+checkLoop state = do
+  didAcks <- checkAcks state
+  didRetransmit <- checkRetransmits state
+  didExpired <- checkExpired state
+  if didAcks || didRetransmit || didExpired
+  then checkLoop state
+  else do
+    threadDelay 100000
+    checkLoop state
+
 -- | Create a client using a given transport. This will spawn internal messaging threads making the
 -- client ready to send requests.
 createClient :: Transport -> IO Client
 createClient transport = do
   state <- createMessagingState transport
-  msgThreads <- startMessaging state
+  checkThread <- (async . startLoop state) checkLoop
   return Client { doRequest = doRequestInternal state
                 , doRawRequest = doRawRequestInternal state
-                , shutdownClient = stopClient state msgThreads }
+                , shutdownClient = stopClient state [checkThread] }
 
 -- | Shuts down the internal messaging threads and stops the client
 stopClient :: MessagingState -> [Async ()] -> IO ()
 stopClient state threads = do
-  stopMessaging state threads
+  mapM_ cancel threads
   mapM_ wait threads
 
 generateToken :: Int -> IO [Word8]
