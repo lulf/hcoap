@@ -63,7 +63,7 @@ main :: IO ()
 main =
   withSocketsDo $ do
     sock <- socket AF_INET Datagram defaultProtocol
-    bindSocket sock (SockAddrInet 5683 iNADDR_ANY)
+    bind sock (SockAddrInet 5683 0)
     server <- createServer (createUDPTransport sock) requestHandler
     runServer server
 

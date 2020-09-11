@@ -21,7 +21,7 @@ runClient (method:uriStr:_) = do
                         , requestReliable = True }
   withSocketsDo $ do
     sock <- socket AF_INET6 Datagram defaultProtocol
-    bind sock (SockAddrInet6 0 0 iN6ADDR_ANY 0)
+    bind sock (SockAddrInet6 0 0 (0, 0, 0, 0) 0)
     let transport = createUDPTransport sock
     client <- createClient transport
     let (Just uri) = parseURI uriStr
